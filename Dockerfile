@@ -7,6 +7,7 @@ COPY prisma ./prisma
 RUN npx prisma generate
 COPY tsconfig.json nest-cli.json ./
 COPY src ./src
+# prisma stays installed: it is a production dependency, and startup runs db push.
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim
@@ -24,4 +25,5 @@ COPY --from=build /app/prisma ./prisma
 COPY package.json ./
 ENV NODE_ENV=production
 # db push keeps the schema in sync without a migrations folder; switch to `prisma migrate deploy` once you add migrations.
-CMD ["sh", "-c", "yt-dlp -U >/dev/null 2>&1; npx prisma db push --skip-generate && node dist/main.js"]
+# Use the installed CLI (`npx` would fetch a newer Prisma that cannot push this schema) and exec so node is PID 1.
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --skip-generate && exec node dist/main.js"]
