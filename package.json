@@ -1,0 +1,35 @@
+{
+  "name": "kgb-meeting-digest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Watches the Ketchikan Gateway Borough meeting video archive, transcribes new meetings, summarizes them with Claude, and emails a recap to subscribers.",
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@nestjs/bullmq": "^12.0.0",
+    "@nestjs/common": "^11.2.7",
+    "@nestjs/core": "^11.2.7",
+    "@nestjs/platform-express": "^11.2.7",
+    "@prisma/client": "^6.19.3",
+    "bullmq": "^6.3.15",
+    "cheerio": "^1.2.0",
+    "dotenv": "^18.0.8",
+    "reflect-metadata": "^0.2.2",
+    "resend": "^6.34.0",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.24",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "prisma": "^6.19.3",
+    "typescript": "^5.9.3"
+  }
+}
