@@ -13,7 +13,7 @@ RUN npm run build && npm prune --omit=dev
 FROM node:22-bookworm-slim
 WORKDIR /app
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl curl \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl curl redis-server \
  && curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
  && chmod +x /usr/local/bin/yt-dlp \
  && rm -rf /var/lib/apt/lists/*
@@ -23,7 +23,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 ENV NODE_ENV=production
 # db push keeps the schema in sync without a migrations folder; switch to `prisma migrate deploy` once you add migrations.
-# Use the installed CLI (`npx` would fetch a newer Prisma that cannot push this schema) and exec so node is PID 1.
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push --skip-generate && exec node dist/main.js"]
+CMD ["./docker-entrypoint.sh"]

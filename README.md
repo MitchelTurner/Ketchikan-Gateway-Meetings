@@ -14,7 +14,7 @@ NestJS 11 · BullMQ on Redis · Prisma/Postgres · yt-dlp + ffmpeg · AssemblyAI
 
 ## Deploy on Railway
 1. New project → add **Postgres** and **Redis** → add this repo as a service (it builds from the Dockerfile).
-2. Set variables from `.env.example`. Reference `${{Postgres.DATABASE_URL}}` and `${{Redis.REDIS_URL}}`.
+2. Set variables from `env.example`. Reference `${{Postgres.DATABASE_URL}}`. Redis is optional: if `REDIS_URL` is unset, the container runs Redis itself and the job queue resets on every deploy. To keep jobs across deploys, add Redis and set `REDIS_URL=${{Redis.REDIS_URL}}`.
 3. Verify your sending domain in Resend and set `EMAIL_FROM` to an address on it.
 4. Deploy. The schema is applied on start (`prisma db push`).
 5. **Check what the scraper sees** — the video host isn't known yet:

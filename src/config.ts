@@ -54,9 +54,24 @@ export const config = {
   get adminToken() { return req('ADMIN_TOKEN'); },
   get signingSecret() { return req('SIGNING_SECRET'); },
 
-  // Redis
-  get redisUrl() { return req('REDIS_URL'); },
+  // Redis. Railway only injects REDIS_URL when this service references the
+  // Redis service. REDISHOST / REDIS_HOST are the template's other names.
+  // The image starts a local Redis when none of these are set.
+  get redisUrl() { return resolveRedisUrl(); },
 };
+
+function resolveRedisUrl(): string {
+  if (process.env.REDIS_URL) return process.env.REDIS_URL;
+  const host = process.env.REDISHOST || process.env.REDIS_HOST;
+  if (host) {
+    const port = process.env.REDISPORT || process.env.REDIS_PORT || '6379';
+    const user = process.env.REDISUSER || process.env.REDIS_USER || '';
+    const pass = process.env.REDISPASSWORD || process.env.REDIS_PASSWORD || '';
+    const auth = user || pass ? `${encodeURIComponent(user)}:${encodeURIComponent(pass)}@` : '';
+    return `redis://${auth}${host}:${port}`;
+  }
+  return 'redis://127.0.0.1:6379';
+}
 
 /** ioredis options from a URL. family: 0 is needed for Railway's private (IPv6) network. */
 export function redisConnection() {
