@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { MeetingDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
-import { BODIES, esc, randomToken } from '../util';
-import { bodyCheckboxes, page, signupPage } from './page';
+import { BODIES, esc, formatDate, randomToken } from '../util';
+import { bodyCheckboxes, noteDetailPage, notesSearchPage, page, signupPage } from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -22,6 +23,51 @@ export class PublicController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   home() {
     return signupPage();
+  }
+
+  /** Published recaps — the same notes subscribers get by email, after review. */
+  @Get('notes')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async notes(@Query('q') q?: string, @Query('body') body?: string) {
+    const query = String(q ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const bodyName = VALID_BODIES.has(String(body ?? '')) ? String(body) : '';
+    const meetings = await this.prisma.meeting.findMany({
+      where: {
+        analysis: { is: { approvedAt: { not: null } } },
+        ...(bodyName ? { body: bodyName } : {}),
+      },
+      include: { analysis: true },
+      orderBy: [{ meetingDate: 'desc' }, { createdAt: 'desc' }],
+      take: query ? 1000 : 40,
+    });
+    const hits = [];
+    for (const m of meetings) {
+      const digest = asDigest(m.analysis?.data);
+      if (!digest) continue;
+      const plain = notePlain(m.title, m.body, digest);
+      if (query && !plain.toLowerCase().includes(query.toLowerCase())) continue;
+      hits.push({
+        id: m.id,
+        title: m.title,
+        body: m.body,
+        date: formatDate(m.meetingDate),
+        headline: digest.headline,
+        snippet: snippet(query ? plain : digest.summary, query),
+      });
+      if (hits.length >= 40) break;
+    }
+    return notesSearchPage(query, bodyName, hits);
+  }
+
+  @Get('notes/:id')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async note(@Param('id') id: string) {
+    const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
+    const digest = m?.analysis?.approvedAt ? asDigest(m.analysis.data) : null;
+    if (!m || !digest) {
+      return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here after they've been reviewed and emailed. <a href="/notes">Back to search</a>.</p>`);
+    }
+    return noteDetailPage(m, digest);
   }
 
   /** Double opt-in: always answers the same way so the form can't be used to probe who's subscribed. */
@@ -92,4 +138,53 @@ export class PublicController {
     await this.prisma.subscriber.updateMany({ where: { token }, data: { bodies: normBodies(body.bodies) } });
     return page('Saved', `<h1>Saved</h1><p>Your meeting choices are updated.</p>`);
   }
+}
+
+function asDigest(data: unknown): MeetingDigest | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Partial<MeetingDigest>;
+  if (typeof d.headline !== 'string' || typeof d.summary !== 'string') return null;
+  return {
+    headline: d.headline,
+    summary: d.summary,
+    actions: Array.isArray(d.actions) ? d.actions : [],
+    discussion: Array.isArray(d.discussion) ? d.discussion : [],
+    publicComment: Array.isArray(d.publicComment) ? d.publicComment : [],
+    upcoming: Array.isArray(d.upcoming) ? d.upcoming : [],
+    caveats: Array.isArray(d.caveats) ? d.caveats : [],
+  };
+}
+
+function notePlain(title: string, body: string, d: MeetingDigest): string {
+  return [
+    title,
+    body,
+    d.headline,
+    d.summary,
+    ...d.actions.flatMap((a) => [a.item, a.outcome, a.vote]),
+    ...d.discussion.flatMap((x) => [x.topic, x.gist]),
+    ...d.publicComment.flatMap((x) => [x.who, x.topic, x.gist]),
+    ...d.upcoming.flatMap((x) => [x.item, x.when]),
+    ...d.caveats,
+  ]
+    .filter((s) => typeof s === 'string' && s)
+    .join('\n');
+}
+
+/** A short extract, with the query marked when it appears. `snippet` is already escaped HTML when it contains <mark>. */
+function snippet(text: string, q: string): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  const window = 220;
+  if (!q) return esc(clean.slice(0, window)) + (clean.length > window ? '…' : '');
+  const i = clean.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return esc(clean.slice(0, window)) + (clean.length > window ? '…' : '');
+  const start = Math.max(0, i - 80);
+  const end = Math.min(clean.length, i + q.length + 120);
+  return (
+    (start > 0 ? '…' : '') +
+    esc(clean.slice(start, i)) +
+    `<mark>${esc(clean.slice(i, i + q.length))}</mark>` +
+    esc(clean.slice(i + q.length, end)) +
+    (end < clean.length ? '…' : '')
+  );
 }

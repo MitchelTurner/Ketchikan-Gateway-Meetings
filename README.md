@@ -45,7 +45,7 @@ Set `AUTO_SEND=true` to skip approval once you trust the output.
 - `GET /admin/stats`
 
 ## Public pages
-`/` signup (double opt-in) · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only.
+`/` signup (double opt-in) · `/notes` search published recaps · `/notes/:id` one recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. Notes appear after a recap is approved and emailed, not while it's still a draft.
 
 ## Costs (rough, per 3-hour meeting)
 AssemblyAI ≈ $0.45–1.10 depending on model · Claude Sonnet ≈ $0.30–0.60 (≈60–90k input tokens) · Resend free tier covers 3,000 emails/month.
