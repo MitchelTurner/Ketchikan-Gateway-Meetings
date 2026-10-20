@@ -4,7 +4,7 @@ import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
 import { BODIES, esc, formatDate, randomToken } from '../util';
-import { bodyCheckboxes, noteDetailPage, notesSearchPage, page, signupPage } from './page';
+import { bodyCheckboxes, NoteHit, noteDetailPage, notesSearchPage, page, signupPage } from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -21,26 +21,31 @@ export class PublicController {
 
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
-  home() {
-    return signupPage();
+  async home() {
+    return signupPage(await this.publishedHits('', '', 5));
   }
 
-  /** Published recaps — the same notes subscribers get by email, after review. */
+  /** Published recaps — the same notes subscribers get by email, after review. Newest first. */
   @Get('notes')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async notes(@Query('q') q?: string, @Query('body') body?: string) {
     const query = String(q ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const bodyName = VALID_BODIES.has(String(body ?? '')) ? String(body) : '';
+    return notesSearchPage(query, bodyName, await this.publishedHits(query, bodyName, 40));
+  }
+
+  /** Approved recaps, newest meeting date first. A query searches within that order. */
+  private async publishedHits(query: string, bodyName: string, limit: number): Promise<NoteHit[]> {
     const meetings = await this.prisma.meeting.findMany({
       where: {
         analysis: { is: { approvedAt: { not: null } } },
         ...(bodyName ? { body: bodyName } : {}),
       },
       include: { analysis: true },
-      orderBy: [{ meetingDate: 'desc' }, { createdAt: 'desc' }],
-      take: query ? 1000 : 40,
+      orderBy: [{ meetingDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+      take: query ? 1000 : limit,
     });
-    const hits = [];
+    const hits: NoteHit[] = [];
     for (const m of meetings) {
       const digest = asDigest(m.analysis?.data);
       if (!digest) continue;
@@ -54,9 +59,9 @@ export class PublicController {
         headline: digest.headline,
         snippet: snippet(query ? plain : digest.summary, query),
       });
-      if (hits.length >= 40) break;
+      if (hits.length >= limit) break;
     }
-    return notesSearchPage(query, bodyName, hits);
+    return hits;
   }
 
   @Get('notes/:id')

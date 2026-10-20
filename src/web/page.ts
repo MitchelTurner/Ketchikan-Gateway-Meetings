@@ -4,7 +4,7 @@ import { MeetingDigest } from '../analysis/analysis.service';
 import { BODIES, esc, formatDate, hms } from '../util';
 
 /** Minimal light-only page shell for the public signup, search, and account screens. */
-export function page(title: string, inner: string, wide = false): string {
+export function page(title: string, inner: string, wide = false, below = ''): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><title>${esc(title)}</title>
 <style>
@@ -15,6 +15,8 @@ main{max-width:${wide ? '720px' : '520px'};margin:48px auto;padding:0 16px}
 .nav a{color:var(--accent);text-decoration:none}
 .nav a:hover{text-decoration:underline}
 .card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:28px 24px}
+.card+.card{margin-top:16px}
+h2.section{font-size:18px;line-height:1.3;margin:22px 0 8px}
 h1{font-size:24px;line-height:1.25;margin:0 0 10px}p{margin:0 0 14px}.muted{color:var(--muted);font-size:14px}
 label{display:block;font-weight:600;margin:18px 0 6px}
 input[type=email],input[type=search],select{width:100%;padding:11px 12px;font-size:16px;border:1px solid var(--rule);border-radius:6px;background:#fff;color:inherit}
@@ -35,8 +37,9 @@ mark{background:#fff3c4;padding:0 2px;border-radius:2px}
 .caveat{margin-top:28px;padding:12px 14px;background:var(--bg);border-radius:6px;font-size:13px;color:var(--muted)}
 footer{text-align:center;margin-top:18px}
 </style></head><body><main>
-<nav class="nav"><a href="/notes">Search notes</a><a href="/">Email updates</a></nav>
+<nav class="nav"><a href="/notes">Notes</a><a href="/">Email updates</a></nav>
 <div class="card">${inner}</div>
+${below}
 <footer class="muted">Not an official Ketchikan Gateway Borough publication.</footer></main></body></html>`;
 }
 
@@ -47,7 +50,16 @@ ${BODIES.map(
 ).join('')}</fieldset>`;
 }
 
-export const signupPage = () =>
+export function hitList(hits: NoteHit[]): string {
+  if (!hits.length) return '';
+  return `<div class="hits">${hits
+    .map(
+      (h) => `<a class="hit" href="/notes/${esc(h.id)}"><div class="kicker">${esc(h.body)}${h.date ? ` · ${esc(h.date)}` : ''}</div><h2>${esc(h.headline)}</h2><p>${h.snippet}</p></a>`,
+    )
+    .join('')}</div>`;
+}
+
+export const signupPage = (recent: NoteHit[]) =>
   page(
     config.newsletterName,
     `<h1>${esc(config.newsletterName)}</h1>
@@ -56,7 +68,11 @@ export const signupPage = () =>
 <label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="email">
 ${bodyCheckboxes()}
 <button type="submit">Subscribe</button></form>
-<p class="muted" style="margin-top:16px">Recaps are written by AI from automated transcripts and reviewed before sending. One-click unsubscribe in every email. You can also <a href="/notes">search notes on the site</a> without signing up.</p>`,
+<p class="muted" style="margin-top:16px">Recaps are written by AI from automated transcripts and reviewed before sending. One-click unsubscribe in every email.</p>`,
+    true,
+    `<div class="card"><h2 class="section" style="margin-top:0">Most recent</h2>
+${recent.length ? hitList(recent) : '<p class="muted">No recaps published yet. They show up here after a meeting is reviewed and emailed.</p>'}
+<p style="margin:14px 0 0"><a href="/notes">Search all notes</a></p></div>`,
   );
 
 export interface NoteHit {
@@ -73,21 +89,19 @@ export function notesSearchPage(q: string, body: string, hits: NoteHit[]): strin
     BODIES.map((b) => `<option value="${esc(b.name)}"${b.name === body ? ' selected' : ''}>${esc(b.name)}</option>`),
   );
   const list = hits.length
-    ? `<div class="hits">${hits
-        .map(
-          (h) => `<a class="hit" href="/notes/${esc(h.id)}"><div class="kicker">${esc(h.body)}${h.date ? ` · ${esc(h.date)}` : ''}</div><h2>${esc(h.headline)}</h2><p>${h.snippet}</p></a>`,
-        )
-        .join('')}</div>`
+    ? hitList(hits)
     : `<p class="muted">${q ? `Nothing in the published notes matches “${esc(q)}”.` : 'No recaps published yet. They show up here after a meeting is reviewed and emailed.'}</p>`;
-  const count = hits.length ? `<p class="muted">${hits.length} ${hits.length === 1 ? 'note' : 'notes'}${q ? ` matching “${esc(q)}”` : ''}.</p>` : '';
+  const count = hits.length ? `<p class="muted">${hits.length} ${hits.length === 1 ? 'note' : 'notes'}${q ? ` matching “${esc(q)}”` : ''}, newest first.</p>` : '';
+  const heading = q ? 'Results' : 'Most recent';
   return page(
-    q ? `Search: ${q}` : 'Meeting notes',
+    q ? `Search: ${q}` : 'Most recent notes',
     `<h1>Meeting notes</h1>
-<p>The same recaps that go out by email, after they've been reviewed.</p>
+<p>The same recaps that go out by email, after they've been reviewed. Newest first.</p>
 <form method="get" action="/notes">
 <label for="q">Search</label><input id="q" type="search" name="q" value="${esc(q)}" placeholder="harbor, budget, ordinance…">
 <label for="body">Which meetings?</label><select id="body" name="body">${options.join('')}</select>
 <button type="submit">Search</button></form>
+<h2 class="section">${heading}</h2>
 ${count}${list}`,
     true,
   );
