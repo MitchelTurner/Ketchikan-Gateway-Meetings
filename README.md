@@ -4,9 +4,9 @@ Watches the Ketchikan Gateway Borough [meeting video archive](https://www.kgbak.
 
 ```
 every 3h ─▶ discover ─▶ process (1 at a time) ───────────────────────────▶ review email to you
-            scrape page   yt-dlp audio → AssemblyAI/Whisper → Claude digest         │ approve link
-            + expand YT                                                              ▼
-            channels                                              deliver ─▶ email queue (rate-limited)
+            archive page  yt-dlp audio → AssemblyAI/Whisper → Claude digest         │ approve link
+            + Granicus                                                                ▼
+            clips                                                 deliver ─▶ email queue (rate-limited)
 ```
 
 ## Stack
@@ -17,12 +17,12 @@ NestJS 11 · BullMQ on Redis · Prisma/Postgres · yt-dlp + ffmpeg · AssemblyAI
 2. Set variables from `env.example`. Reference `${{Postgres.DATABASE_URL}}`. Redis is optional: if `REDIS_URL` is unset, the container runs Redis itself and the job queue resets on every deploy. To keep jobs across deploys, add Redis and set `REDIS_URL=${{Redis.REDIS_URL}}`.
 3. Verify your sending domain in Resend and set `EMAIL_FROM` to an address on it.
 4. Deploy. The schema is applied on start (`prisma db push`).
-5. **Check what the scraper sees** — the video host isn't known yet:
+5. Check discovery, then run it:
    ```
    curl -H "Authorization: Bearer $ADMIN_TOKEN" https://YOUR_APP/admin/inspect
+   curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://YOUR_APP/admin/discover
    ```
-   `detected` lists videos found; `embeds` lists every iframe/script on the page. If `detected` is empty, the host in `embeds` needs a rule in `src/discovery/video-detect.ts` (`classify`).
-6. Kick off the first run: `curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://YOUR_APP/admin/discover`
+   `detected` lists meeting clips. The Borough archive embeds a Granicus publisher, and inspect follows that frame. Meetings older than `PROCESS_SINCE` (default: the last 14 days) are saved as `SKIPPED` and are not downloaded.
 
 ## How a meeting flows
 | Status | Meaning |
@@ -51,7 +51,7 @@ Set `AUTO_SEND=true` to skip approval once you trust the output.
 AssemblyAI ≈ $0.45–1.10 depending on model · Claude Sonnet ≈ $0.30–0.60 (≈60–90k input tokens) · Resend free tier covers 3,000 emails/month.
 
 ## Things to know
-- **Borough site:** its robots.txt blocks some automated fetchers. This checks one page every 3 hours with an identifying user agent. If the videos turn out to be on YouTube, consider pointing `ARCHIVE_URL` at a page that just links the channel, or ask the Clerk's office — they may be glad to help.
+- **Borough site:** the archive page embeds a Granicus publisher (`ViewPublisher.php`). Discovery follows that frame, stores each clip's MediaPlayer link, and downloads the meeting MP3 (not the multi-gigabyte MP4). Meetings older than `PROCESS_SINCE` are recorded as `SKIPPED` and are not transcribed. The Borough robots.txt blocks some automated fetchers; this checks the archive every 3 hours with an identifying user agent.
 - **YouTube from Railway:** YouTube sometimes blocks datacenter IPs ("confirm you're not a bot"). Fix: export cookies from a throwaway Google account, `base64 -w0 cookies.txt`, set `YTDLP_COOKIES_B64`.
 - **Accuracy:** Claude is told to use names only when clearly spoken, never print "Speaker A", and flag unclear votes. Every item links to its timestamp in the video. Keep approval on for the first several meetings.
 - **Body categories** come from title keywords in `src/util.ts` (`BODIES`).

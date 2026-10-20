@@ -6,7 +6,15 @@ import { MediaService, VideoMeta } from '../media/media.service';
 import { PrismaService } from '../prisma.service';
 import { Q_PROCESS } from '../queues';
 import { detectBody, parseDateFromText } from '../util';
-import { detectVideos, listEmbeds, VideoRef } from './video-detect';
+import {
+  detectVideos,
+  granicusPublisherUrls,
+  isGranicusPublisher,
+  listEmbeds,
+  meetingTitle,
+  parseGranicusArchive,
+  VideoRef,
+} from './video-detect';
 
 @Injectable()
 export class DiscoveryService {
@@ -26,12 +34,12 @@ export class DiscoveryService {
     return res.text();
   }
 
-  /** What the archive page contains — for figuring out the Borough's video host. */
+  /** What the archive page contains, including clips inside a Granicus publisher frame. */
   async inspect() {
     const html = await this.fetchArchiveHtml();
     return {
       archiveUrl: config.archiveUrl,
-      detected: detectVideos(html, config.archiveUrl),
+      detected: await this.collectRefs(html, config.archiveUrl, false),
       embeds: listEmbeds(html, config.archiveUrl),
       htmlBytes: html.length,
     };
@@ -39,15 +47,53 @@ export class DiscoveryService {
 
   async findVideos(): Promise<VideoRef[]> {
     const html = await this.fetchArchiveHtml();
-    const refs = detectVideos(html, config.archiveUrl);
-    const out = new Map<string, VideoRef>();
-    for (const r of refs) {
-      if (r.platform === 'youtube-list') {
-        for (const v of await this.media.expandList(r.url)) if (!out.has(v.url)) out.set(v.url, v);
-      } else if (!out.has(r.url)) out.set(r.url, r);
-    }
-    if (out.size === 0) {
+    const out = await this.collectRefs(html, config.archiveUrl, true);
+    if (out.length === 0) {
       this.log.warn(`No videos detected on ${config.archiveUrl}. Embeds seen: ${listEmbeds(html, config.archiveUrl).join(', ') || 'none'}`);
+    }
+    return out;
+  }
+
+  private async fetchHtml(url: string): Promise<string> {
+    const res = await fetch(url, { headers: { 'User-Agent': config.userAgent, Accept: 'text/html' } });
+    if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+    return res.text();
+  }
+
+  /**
+   * Direct video links on the page, plus every finished clip on a Granicus
+   * ViewPublisher frame. MP4 links on that frame are the same meetings and are
+   * not recorded separately.
+   */
+  private async collectRefs(html: string, pageUrl: string, expandLists: boolean): Promise<VideoRef[]> {
+    const out = new Map<string, VideoRef>();
+    const add = (r: VideoRef) => {
+      const existing = out.get(r.url);
+      if (!existing) out.set(r.url, r);
+      else if (!existing.label && r.label) existing.label = r.label;
+    };
+
+    for (const r of detectVideos(html, pageUrl)) {
+      if (r.platform === 'file' && /archive-video\.granicus\.com/i.test(r.url)) continue;
+      if (r.platform === 'youtube-list' && expandLists) {
+        for (const v of await this.media.expandList(r.url)) add(v);
+      } else add(r);
+    }
+
+    const pages: { url: string; html: string }[] = [];
+    if (isGranicusPublisher(pageUrl)) pages.push({ url: pageUrl, html });
+    for (const pub of granicusPublisherUrls(html, pageUrl)) {
+      if (pub === pageUrl || pages.some((p) => p.url === pub)) continue;
+      try {
+        pages.push({ url: pub, html: await this.fetchHtml(pub) });
+      } catch (err) {
+        this.log.warn(`Granicus publisher failed: ${(err as Error).message.split('\n')[0]}`);
+      }
+    }
+    for (const page of pages) {
+      const clips = parseGranicusArchive(page.html, page.url);
+      this.log.log(`Granicus ${page.url}: ${clips.length} clips`);
+      for (const clip of clips) out.set(clip.url, clip);
     }
     return [...out.values()];
   }
@@ -62,18 +108,23 @@ export class DiscoveryService {
       const exists = await this.prisma.meeting.findUnique({ where: { sourceUrl: ref.url }, select: { id: true } });
       if (exists) continue;
 
+      // The archive row already has the meeting date. Don't ask yt-dlp about the
+      // hundreds of older clips that will only be stored as SKIPPED.
+      const labelDate = parseDateFromText(ref.label);
       let meta: VideoMeta = {};
-      try {
-        meta = await this.media.getMetadata(ref.url);
-      } catch (err) {
-        this.log.warn(`Metadata failed for ${ref.url}: ${(err as Error).message.split('\n')[0]}`);
+      if (!labelDate) {
+        try {
+          meta = await this.media.getMetadata(ref.url);
+        } catch (err) {
+          this.log.warn(`Metadata failed for ${ref.url}: ${(err as Error).message.split('\n')[0]}`);
+        }
+        // A stream that's live or scheduled isn't a finished recording yet; catch it next run.
+        if (meta.liveStatus === 'is_live' || meta.liveStatus === 'is_upcoming') continue;
       }
-      // A stream that's live or scheduled isn't a finished recording yet; catch it next run.
-      if (meta.liveStatus === 'is_live' || meta.liveStatus === 'is_upcoming') continue;
 
-      const title = meta.title || ref.label || ref.url;
+      const title = meetingTitle(meta.title, ref.label, ref.url);
       // Titles usually carry the actual meeting date; upload date can lag a day or more.
-      const meetingDate = parseDateFromText(title) ?? parseDateFromText(ref.label) ?? meta.date ?? null;
+      const meetingDate = parseDateFromText(title) ?? labelDate ?? meta.date ?? null;
       const skip = !meetingDate || meetingDate < since;
 
       const m = await this.prisma.meeting.create({
@@ -83,7 +134,7 @@ export class DiscoveryService {
           title,
           body: detectBody(title),
           meetingDate,
-          durationSec: meta.durationSec,
+          durationSec: meta.durationSec ?? ref.durationSec,
           status: skip ? 'SKIPPED' : 'DISCOVERED',
         },
       });
