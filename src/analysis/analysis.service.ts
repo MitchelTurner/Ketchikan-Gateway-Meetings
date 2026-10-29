@@ -24,63 +24,70 @@ You work only from the automated transcript provided. Rules:
 - Write in plain language a busy resident can skim. No jargon without a short explanation.
 - Public comment: summarize each speaker's point fairly in one sentence, including people you'd disagree with.`;
 
-const TOOL: Anthropic.Tool = {
-  name: 'meeting_digest',
-  description: 'Record the structured recap of the meeting.',
-  input_schema: {
-    type: 'object',
-    properties: {
+// Sonnet 5.5 rejects tool_choice "tool" and "any". A JSON schema response is the
+// supported way to get this object back. Every object needs additionalProperties: false.
+const obj = (properties: Record<string, unknown>, required: string[], description?: string) => ({
+  type: 'object',
+  additionalProperties: false,
+  properties,
+  required,
+  ...(description ? { description } : {}),
+});
+
+const DIGEST_FORMAT: Anthropic.JSONOutputFormat = {
+  type: 'json_schema',
+  schema: obj(
+    {
       headline: { type: 'string', description: 'One line, under 90 characters, the most consequential thing that happened.' },
       summary: { type: 'string', description: '2–3 short paragraphs, plain text, separated by blank lines.' },
       actions: {
         type: 'array',
         description: 'Formal actions: motions, ordinances, resolutions, appointments, approvals, in meeting order.',
-        items: {
-          type: 'object',
-          properties: {
+        items: obj(
+          {
             item: { type: 'string' },
             outcome: { type: 'string', description: 'e.g. "Approved", "Failed", "Postponed to Nov 3", "Unclear from audio"' },
-            vote: { type: 'string', description: 'e.g. "6–1" or "unanimous"; omit if not stated' },
+            vote: { type: 'string', description: 'e.g. "6–1" or "unanimous". Empty string if the transcript does not state one.' },
             t: { type: 'number' },
           },
-          required: ['item', 'outcome', 't'],
-        },
+          ['item', 'outcome', 'vote', 't'],
+        ),
       },
       discussion: {
         type: 'array',
         description: 'Up to 6 notable discussions that did not end in a formal action.',
-        items: {
-          type: 'object',
-          properties: { topic: { type: 'string' }, gist: { type: 'string' }, t: { type: 'number' } },
-          required: ['topic', 'gist', 't'],
-        },
+        items: obj(
+          { topic: { type: 'string' }, gist: { type: 'string' }, t: { type: 'number' } },
+          ['topic', 'gist', 't'],
+        ),
       },
       publicComment: {
         type: 'array',
-        items: {
-          type: 'object',
-          properties: {
+        items: obj(
+          {
             who: { type: 'string', description: 'Name if clearly stated, else "A resident" etc.' },
             topic: { type: 'string' },
             gist: { type: 'string' },
             t: { type: 'number' },
           },
-          required: ['who', 'topic', 'gist', 't'],
-        },
+          ['who', 'topic', 'gist', 't'],
+        ),
       },
       upcoming: {
         type: 'array',
         description: 'Things scheduled or promised for future meetings, hearings, deadlines.',
-        items: {
-          type: 'object',
-          properties: { item: { type: 'string' }, when: { type: 'string' } },
-          required: ['item'],
-        },
+        items: obj(
+          {
+            item: { type: 'string' },
+            when: { type: 'string', description: 'When it happens, or an empty string if the transcript does not say.' },
+          },
+          ['item', 'when'],
+        ),
       },
       caveats: { type: 'array', items: { type: 'string' }, description: 'Audio gaps, unclear votes, likely misheard names.' },
     },
-    required: ['headline', 'summary', 'actions', 'discussion', 'publicComment', 'upcoming', 'caveats'],
-  },
+    ['headline', 'summary', 'actions', 'discussion', 'publicComment', 'upcoming', 'caveats'],
+  ),
 };
 
 @Injectable()
@@ -98,10 +105,9 @@ export class AnalysisService {
     const transcript = formatTranscript(segments);
     const res = await this.anthropic.messages.create({
       model: this.model,
-      max_tokens: 8000,
+      max_tokens: 16000,
       system: SYSTEM,
-      tools: [TOOL],
-      tool_choice: { type: 'tool', name: TOOL.name },
+      output_config: { effort: 'medium', format: DIGEST_FORMAT },
       messages: [
         {
           role: 'user',
@@ -109,17 +115,28 @@ export class AnalysisService {
         },
       ],
     });
-    const block = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
-    if (!block) throw new Error(`Claude returned no digest (stop_reason: ${res.stop_reason})`);
     if (res.stop_reason === 'max_tokens') throw new Error('Digest was cut off at max_tokens');
-    const digest = normalizeDigest(block.input);
+    if (res.stop_reason === 'refusal') throw new Error('Claude refused to write the digest');
+    const text = res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
+      .trim();
+    let parsed: unknown;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    if (!parsed) throw new Error(`Claude returned no digest (stop_reason: ${res.stop_reason})`);
+    const digest = normalizeDigest(parsed);
     if (!digest) throw new Error('Claude returned a digest without a headline and summary');
     return digest;
   }
 }
 
 /**
- * Tool output is usually the right shape. A null list entry, or a summary sent
+ * Model output is usually the right shape. A null list entry, or a summary sent
  * as an array of paragraphs, used to throw while rendering the public pages.
  */
 export function normalizeDigest(data: unknown): MeetingDigest | null {
