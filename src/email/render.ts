@@ -11,6 +11,10 @@ export interface RenderInput {
   banner?: string; // admin preview: approve link etc. (pre-escaped HTML)
 }
 
+function rows<T>(v: T[] | null | undefined): T[] {
+  return Array.isArray(v) ? v.filter((x) => !!x && typeof x === 'object') : [];
+}
+
 export function timestampUrl(url: string, platform: string, t: number): string {
   const s = Math.max(0, Math.floor(t));
   if (platform === 'youtube') return `${url}&t=${s}s`;
@@ -35,30 +39,34 @@ export function renderHtml(i: RenderInput): string {
   const li = (inner: string) => `<li style="margin:0 0 10px;line-height:1.5">${inner}</li>`;
   const list = (items: string[]) => `<ul style="padding-left:18px;margin:0">${items.join('')}</ul>`;
 
+  const actions = rows(d.actions).filter((a) => a.item || a.outcome);
+  const discussion = rows(d.discussion).filter((x) => x.topic || x.gist);
+  const comments = rows(d.publicComment).filter((x) => x.who || x.topic || x.gist);
+  const upcoming = rows(d.upcoming).filter((x) => x.item);
   const sections: string[] = [];
   sections.push(
-    d.summary
+    String(d.summary ?? '')
       .split(/\n\s*\n/)
       .map((p) => `<p style="margin:0 0 14px;line-height:1.6">${esc(p.trim())}</p>`)
       .join(''),
   );
-  if (d.actions.length)
+  if (actions.length)
     sections.push(
       h2('What they decided') +
-        list(d.actions.map((a) => li(`<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''} · ${ts(a.t)}`))),
+        list(actions.map((a) => li(`<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''} · ${ts(a.t)}`))),
     );
-  if (d.discussion.length)
-    sections.push(h2('Also discussed') + list(d.discussion.map((x) => li(`<strong>${esc(x.topic)}:</strong> ${esc(x.gist)} · ${ts(x.t)}`))));
-  if (d.publicComment.length)
+  if (discussion.length)
+    sections.push(h2('Also discussed') + list(discussion.map((x) => li(`<strong>${esc(x.topic)}:</strong> ${esc(x.gist)} · ${ts(x.t)}`))));
+  if (comments.length)
     sections.push(
-      h2('Public comment') + list(d.publicComment.map((x) => li(`<strong>${esc(x.who)}</strong> on ${esc(x.topic)}: ${esc(x.gist)} · ${ts(x.t)}`))),
+      h2('Public comment') + list(comments.map((x) => li(`<strong>${esc(x.who)}</strong> on ${esc(x.topic)}: ${esc(x.gist)} · ${ts(x.t)}`))),
     );
-  if (d.upcoming.length)
-    sections.push(h2('Coming up') + list(d.upcoming.map((x) => li(`${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))));
+  if (upcoming.length)
+    sections.push(h2('Coming up') + list(upcoming.map((x) => li(`${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))));
 
   const caveat = [
     'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
-    ...d.caveats,
+    ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []),
   ];
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${esc(renderSubject(i))}</title></head>
@@ -82,13 +90,17 @@ ${esc(i.mailingAddress)}
 
 export function renderText(i: RenderInput): string {
   const { meeting: m, digest: d } = i;
-  const out: string[] = [d.headline, `${m.title}${m.meetingDate ? ` — ${formatDate(m.meetingDate)}` : ''}`, `Video: ${m.sourceUrl}`, '', d.summary, ''];
-  const sec = (title: string, rows: string[]) => rows.length && out.push(title.toUpperCase(), ...rows.map((r) => `- ${r}`), '');
-  sec('What they decided', d.actions.map((a) => `${a.item} — ${a.outcome}${a.vote ? ` (${a.vote})` : ''} [${hms(a.t)}]`));
-  sec('Also discussed', d.discussion.map((x) => `${x.topic}: ${x.gist} [${hms(x.t)}]`));
-  sec('Public comment', d.publicComment.map((x) => `${x.who} on ${x.topic}: ${x.gist} [${hms(x.t)}]`));
-  sec('Coming up', d.upcoming.map((x) => `${x.item}${x.when ? ` — ${x.when}` : ''}`));
-  out.push('Written by AI from an automated transcript; check the video before relying on it.', ...d.caveats, '');
+  const actions = rows(d.actions).filter((a) => a.item || a.outcome);
+  const discussion = rows(d.discussion).filter((x) => x.topic || x.gist);
+  const comments = rows(d.publicComment).filter((x) => x.who || x.topic || x.gist);
+  const upcoming = rows(d.upcoming).filter((x) => x.item);
+  const out: string[] = [d.headline, `${m.title}${m.meetingDate ? ` — ${formatDate(m.meetingDate)}` : ''}`, `Video: ${m.sourceUrl}`, '', String(d.summary ?? ''), ''];
+  const sec = (title: string, lines: string[]) => lines.length && out.push(title.toUpperCase(), ...lines.map((r) => `- ${r}`), '');
+  sec('What they decided', actions.map((a) => `${a.item} — ${a.outcome}${a.vote ? ` (${a.vote})` : ''} [${hms(a.t)}]`));
+  sec('Also discussed', discussion.map((x) => `${x.topic}: ${x.gist} [${hms(x.t)}]`));
+  sec('Public comment', comments.map((x) => `${x.who} on ${x.topic}: ${x.gist} [${hms(x.t)}]`));
+  sec('Coming up', upcoming.map((x) => `${x.item}${x.when ? ` — ${x.when}` : ''}`));
+  out.push('Written by AI from an automated transcript; check the video before relying on it.', ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []), '');
   out.push(`Not an official Borough publication. Unsubscribe: ${i.unsubscribeUrl}`, i.mailingAddress);
   return out.join('\n');
 }

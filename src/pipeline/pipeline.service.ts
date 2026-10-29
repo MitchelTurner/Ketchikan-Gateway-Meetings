@@ -1,11 +1,11 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Meeting } from '@prisma/client';
 import { Queue } from 'bullmq';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { AnalysisService, MeetingDigest } from '../analysis/analysis.service';
+import { AnalysisService, normalizeDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { renderHtml, renderSubject, renderText, RenderInput } from '../email/render';
@@ -161,12 +161,13 @@ export class PipelineService {
   }
 
   async renderInput(meetingId: string, subscriberToken: string | null): Promise<RenderInput> {
-    const m = await this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId }, include: { analysis: true } });
-    if (!m.analysis) throw new Error('Meeting has no analysis yet');
+    const m = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
+    const digest = m?.analysis ? normalizeDigest(m.analysis.data) : null;
+    if (!m || !digest) throw new NotFoundException();
     const base = config.publicBaseUrl;
     return {
       meeting: m,
-      digest: m.analysis.data as unknown as MeetingDigest,
+      digest,
       newsletterName: config.newsletterName,
       mailingAddress: config.mailingAddress,
       unsubscribeUrl: subscriberToken ? `${base}/unsubscribe/${subscriberToken}` : `${base}/`,

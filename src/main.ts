@@ -4,9 +4,11 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { config } from './config';
+import { HtmlExceptionFilter } from './web/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useGlobalFilters(new HtmlExceptionFilter());
   app.enableShutdownHooks();
   // Railway healthchecks and private networking arrive over IPv6. `::` is
   // dual-stack on Linux (it also accepts IPv4). Fall back only where IPv6

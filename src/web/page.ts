@@ -115,27 +115,34 @@ export function noteDetailPage(
     `<a href="${esc(timestampUrl(meeting.sourceUrl, meeting.platform, t))}">${hms(t)}</a>`;
   const h2 = (s: string) => `<h2>${esc(s)}</h2>`;
   const list = (items: string[]) => (items.length ? `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>` : '');
+  const actions = (d.actions ?? []).filter((a) => a && (a.item || a.outcome));
+  const discussion = (d.discussion ?? []).filter((x) => x && (x.topic || x.gist));
+  const comments = (d.publicComment ?? []).filter((x) => x && (x.who || x.topic || x.gist));
+  const upcoming = (d.upcoming ?? []).filter((x) => x && x.item);
   const sections = [
-    d.summary
+    String(d.summary ?? '')
       .split(/\n\s*\n/)
       .map((p) => `<p>${esc(p.trim())}</p>`)
       .join(''),
-    d.actions.length
+    actions.length
       ? h2('What they decided') +
-        list(d.actions.map((a) => `<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''} · ${ts(a.t)}`))
+        list(actions.map((a) => `<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''} · ${ts(a.t)}`))
       : '',
-    d.discussion.length
-      ? h2('Also discussed') + list(d.discussion.map((x) => `<strong>${esc(x.topic)}:</strong> ${esc(x.gist)} · ${ts(x.t)}`))
+    discussion.length
+      ? h2('Also discussed') + list(discussion.map((x) => `<strong>${esc(x.topic)}:</strong> ${esc(x.gist)} · ${ts(x.t)}`))
       : '',
-    d.publicComment.length
+    comments.length
       ? h2('Public comment') +
-        list(d.publicComment.map((x) => `<strong>${esc(x.who)}</strong> on ${esc(x.topic)}: ${esc(x.gist)} · ${ts(x.t)}`))
+        list(comments.map((x) => `<strong>${esc(x.who)}</strong> on ${esc(x.topic)}: ${esc(x.gist)} · ${ts(x.t)}`))
       : '',
-    d.upcoming.length
-      ? h2('Coming up') + list(d.upcoming.map((x) => `${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))
+    upcoming.length
+      ? h2('Coming up') + list(upcoming.map((x) => `${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))
       : '',
   ].join('');
-  const caveats = ['This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.', ...(d.caveats ?? [])];
+  const caveats = [
+    'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
+    ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []),
+  ];
   return page(
     d.headline,
     `<div class="note"><div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>

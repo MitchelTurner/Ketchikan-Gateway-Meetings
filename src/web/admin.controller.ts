@@ -62,6 +62,8 @@ export class AdminController {
   @Post('meetings/:id/process')
   @UseGuards(AdminGuard)
   async process(@Param('id') id: string, @Query('reanalyze') reanalyze?: string) {
+    const existing = await this.prisma.meeting.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) throw new NotFoundException();
     if (reanalyze === 'true') await this.prisma.analysis.deleteMany({ where: { meetingId: id } });
     await this.prisma.meeting.update({ where: { id }, data: { status: 'DISCOVERED', error: null } });
     await this.discovery.enqueueProcess(id);
@@ -72,7 +74,14 @@ export class AdminController {
   @UseGuards(AdminGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
   async preview(@Param('id') id: string) {
-    return renderHtml(await this.pipeline.renderInput(id, null));
+    try {
+      return renderHtml(await this.pipeline.renderInput(id, null));
+    } catch (err) {
+      if (err instanceof NotFoundException) {
+        return page('No recap yet', `<h1>No recap yet</h1><p>This meeting doesn't have a written recap to preview.</p>`);
+      }
+      throw err;
+    }
   }
 
   @Get('meetings/:id/transcript')

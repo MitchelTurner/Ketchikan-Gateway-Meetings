@@ -112,6 +112,55 @@ export class AnalysisService {
     const block = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
     if (!block) throw new Error(`Claude returned no digest (stop_reason: ${res.stop_reason})`);
     if (res.stop_reason === 'max_tokens') throw new Error('Digest was cut off at max_tokens');
-    return block.input as MeetingDigest;
+    const digest = normalizeDigest(block.input);
+    if (!digest) throw new Error('Claude returned a digest without a headline and summary');
+    return digest;
   }
+}
+
+/**
+ * Tool output is usually the right shape. A null list entry, or a summary sent
+ * as an array of paragraphs, used to throw while rendering the public pages.
+ */
+export function normalizeDigest(data: unknown): MeetingDigest | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const d = data as Record<string, unknown>;
+  const headline = text(d.headline);
+  const summary = typeof d.summary === 'string'
+    ? d.summary
+    : Array.isArray(d.summary)
+      ? d.summary.map(text).filter(Boolean).join('\n\n')
+      : '';
+  if (!headline || !summary.trim()) return null;
+  return {
+    headline,
+    summary,
+    actions: records(d.actions)
+      .map((a) => ({ item: text(a.item), outcome: text(a.outcome), ...(text(a.vote) ? { vote: text(a.vote) } : {}), t: seconds(a.t) }))
+      .filter((a) => a.item || a.outcome),
+    discussion: records(d.discussion)
+      .map((x) => ({ topic: text(x.topic), gist: text(x.gist), t: seconds(x.t) }))
+      .filter((x) => x.topic || x.gist),
+    publicComment: records(d.publicComment)
+      .map((x) => ({ who: text(x.who) || 'A resident', topic: text(x.topic), gist: text(x.gist), t: seconds(x.t) }))
+      .filter((x) => x.topic || x.gist),
+    upcoming: records(d.upcoming)
+      .map((x) => ({ item: text(x.item), ...(text(x.when) ? { when: text(x.when) } : {}) }))
+      .filter((x) => x.item),
+    caveats: Array.isArray(d.caveats) ? d.caveats.map(text).filter(Boolean) : [],
+  };
+}
+
+function text(v: unknown): string {
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+function seconds(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : 0;
+}
+
+function records(v: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x));
 }

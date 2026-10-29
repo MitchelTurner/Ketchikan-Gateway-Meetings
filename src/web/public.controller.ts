@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, Query } from '@nestjs/common';
-import { MeetingDigest } from '../analysis/analysis.service';
+import { Body, Controller, Get, Header, HttpCode, Logger, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
@@ -12,6 +13,7 @@ const normBodies = (v: unknown): string[] =>
 
 @Controller()
 export class PublicController {
+  private log = new Logger(PublicController.name);
   constructor(private prisma: PrismaService, private email: EmailService) {}
 
   @Get('health')
@@ -47,7 +49,7 @@ export class PublicController {
     });
     const hits: NoteHit[] = [];
     for (const m of meetings) {
-      const digest = asDigest(m.analysis?.data);
+      const digest = normalizeDigest(m.analysis?.data);
       if (!digest) continue;
       const plain = notePlain(m.title, m.body, digest);
       if (query && !plain.toLowerCase().includes(query.toLowerCase())) continue;
@@ -68,17 +70,21 @@ export class PublicController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   async note(@Param('id') id: string) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
-    const digest = m?.analysis?.approvedAt ? asDigest(m.analysis.data) : null;
+    const digest = m?.analysis?.approvedAt ? normalizeDigest(m.analysis.data) : null;
     if (!m || !digest) {
       return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here after they've been reviewed and emailed. <a href="/notes">Back to search</a>.</p>`);
     }
     return noteDetailPage(m, digest);
   }
 
-  /** Double opt-in: always answers the same way so the form can't be used to probe who's subscribed. */
+  /**
+   * Double opt-in. An address that's already confirmed gets the same "check your inbox"
+   * reply as a new signup, without another email. A send failure gets its own page —
+   * saying the message went out would be false.
+   */
   @Post('subscribe')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async subscribe(@Body() body: { email?: string; bodies?: string | string[] }) {
+  async subscribe(@Body() body: { email?: string; bodies?: string | string[] }, @Res({ passthrough: true }) res: Response) {
     const email = String(body.email ?? '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
       return page('Check your email address', `<h1>That email doesn't look right</h1><p><a href="/">Go back</a> and try again.</p>`);
@@ -89,13 +95,22 @@ export class PublicController {
       const sub = existing
         ? await this.prisma.subscriber.update({ where: { email }, data: { status: 'PENDING', bodies, token: randomToken() } })
         : await this.prisma.subscriber.create({ data: { email, bodies, token: randomToken() } });
-      const url = `${config.publicBaseUrl}/confirm/${sub.token}`;
-      await this.email.send({
-        to: email,
-        subject: `Confirm your ${config.newsletterName} subscription`,
-        html: `<p>Tap to confirm you want ${esc(config.newsletterName)} emails:</p><p><a href="${esc(url)}">${esc(url)}</a></p><p>If you didn't sign up, ignore this and you won't hear from us.</p><p style="color:#5b6675;font-size:12px">${esc(config.mailingAddress)}</p>`,
-        text: `Confirm your subscription: ${url}\n\nIf you didn't sign up, ignore this.\n\n${config.mailingAddress}`,
-      });
+      try {
+        const url = `${config.publicBaseUrl}/confirm/${sub.token}`;
+        await this.email.send({
+          to: email,
+          subject: `Confirm your ${config.newsletterName} subscription`,
+          html: `<p>Tap to confirm you want ${esc(config.newsletterName)} emails:</p><p><a href="${esc(url)}">${esc(url)}</a></p><p>If you didn't sign up, ignore this and you won't hear from us.</p><p style="color:#5b6675;font-size:12px">${esc(config.mailingAddress)}</p>`,
+          text: `Confirm your subscription: ${url}\n\nIf you didn't sign up, ignore this.\n\n${config.mailingAddress}`,
+        });
+      } catch (err) {
+        this.log.error(`Confirmation email failed: ${(err as Error).message}`);
+        res.status(502);
+        return page(
+          "Email didn't send",
+          `<h1>We couldn't send the confirmation</h1><p>Your address is saved, but the confirmation email didn't go out. Recaps start after that message arrives, so <a href="/">try again</a> in a few minutes.</p>`,
+        );
+      }
     }
     return page('Check your inbox', `<h1>Check your inbox</h1><p>We sent a confirmation link to <strong>${esc(email)}</strong>. Recaps start once you tap it.</p>`);
   }
@@ -145,32 +160,17 @@ export class PublicController {
   }
 }
 
-function asDigest(data: unknown): MeetingDigest | null {
-  if (!data || typeof data !== 'object') return null;
-  const d = data as Partial<MeetingDigest>;
-  if (typeof d.headline !== 'string' || typeof d.summary !== 'string') return null;
-  return {
-    headline: d.headline,
-    summary: d.summary,
-    actions: Array.isArray(d.actions) ? d.actions : [],
-    discussion: Array.isArray(d.discussion) ? d.discussion : [],
-    publicComment: Array.isArray(d.publicComment) ? d.publicComment : [],
-    upcoming: Array.isArray(d.upcoming) ? d.upcoming : [],
-    caveats: Array.isArray(d.caveats) ? d.caveats : [],
-  };
-}
-
 function notePlain(title: string, body: string, d: MeetingDigest): string {
   return [
     title,
     body,
     d.headline,
     d.summary,
-    ...d.actions.flatMap((a) => [a.item, a.outcome, a.vote]),
-    ...d.discussion.flatMap((x) => [x.topic, x.gist]),
-    ...d.publicComment.flatMap((x) => [x.who, x.topic, x.gist]),
-    ...d.upcoming.flatMap((x) => [x.item, x.when]),
-    ...d.caveats,
+    ...(d.actions ?? []).flatMap((a) => (a ? [a.item, a.outcome, a.vote] : [])),
+    ...(d.discussion ?? []).flatMap((x) => (x ? [x.topic, x.gist] : [])),
+    ...(d.publicComment ?? []).flatMap((x) => (x ? [x.who, x.topic, x.gist] : [])),
+    ...(d.upcoming ?? []).flatMap((x) => (x ? [x.item, x.when] : [])),
+    ...(d.caveats ?? []),
   ]
     .filter((s) => typeof s === 'string' && s)
     .join('\n');
