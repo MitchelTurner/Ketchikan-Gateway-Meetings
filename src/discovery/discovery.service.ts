@@ -149,15 +149,17 @@ export class DiscoveryService {
   }
 
   /**
-   * A deploy that uses the in-container Redis drops queued jobs. Meetings already
-   * saved but not yet transcribed are queued again. Skip the old archive rows.
+   * A deploy that uses the in-container Redis drops queued jobs. Meetings in the
+   * processing window that never finished — no transcript yet, or a transcript
+   * with no recap — are queued again. Download and transcription are skipped
+   * when those stages are already saved. Older archive rows stay put.
    */
   async requeueUnfinished(): Promise<number> {
     const pending = await this.prisma.meeting.findMany({
       where: {
-        transcript: { is: null },
         meetingDate: { gte: config.processSince },
         status: { in: ['DISCOVERED', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'FAILED'] },
+        OR: [{ transcript: { is: null } }, { analysis: { is: null } }],
       },
       select: { id: true },
     });
