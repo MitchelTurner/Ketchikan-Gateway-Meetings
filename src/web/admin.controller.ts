@@ -1,8 +1,9 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Header, HttpCode, Injectable,
-  NotFoundException, Param, Post, Query, UseGuards,
+  NotFoundException, Param, Post, Query, Req, UseGuards,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { Queue } from 'bullmq';
 import { timingSafeEqual } from 'crypto';
 import { config } from '../config';
@@ -11,17 +12,40 @@ import { renderHtml } from '../email/render';
 import { PipelineService } from '../pipeline/pipeline.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL } from '../queues';
-import { esc, verify } from '../util';
-import { page } from './page';
+import { esc, formatDate, verify } from '../util';
+import { adminMeetingsPage, adminTranscriptPage, page } from './page';
 
 @Injectable()
 class AdminGuard implements CanActivate {
   canActivate(ctx: ExecutionContext) {
-    const h = String(ctx.switchToHttp().getRequest().headers.authorization ?? '');
-    const given = Buffer.from(h.replace(/^Bearer\s+/i, ''));
-    const want = Buffer.from(config.adminToken);
-    return given.length === want.length && timingSafeEqual(given, want);
+    const req = ctx.switchToHttp().getRequest<Request>();
+    const res = ctx.switchToHttp().getResponse<Response>();
+    const header = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+    const query = typeof req.query.token === 'string' ? req.query.token : '';
+    const given = header || query || readCookie(req.headers.cookie, 'admin_token');
+    const want = config.adminToken;
+    const a = Buffer.from(given);
+    const b = Buffer.from(want);
+    const ok = a.length > 0 && a.length === b.length && timingSafeEqual(a, b);
+    // One browser visit with ?token= sets a cookie so transcript links stay readable.
+    if (ok && query) {
+      res.setHeader('Set-Cookie', `admin_token=${encodeURIComponent(query)}; HttpOnly; Path=/admin; SameSite=Lax; Max-Age=2592000`);
+    }
+    return ok;
   }
+}
+
+function readCookie(header: unknown, name: string): string {
+  for (const part of String(header ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i === -1 || part.slice(0, i).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(i + 1).trim());
+    } catch {
+      return '';
+    }
+  }
+  return '';
 }
 
 @Controller('admin')
@@ -49,13 +73,41 @@ export class AdminController {
 
   @Get('meetings')
   @UseGuards(AdminGuard)
-  meetings(@Query('status') status?: string) {
-    return this.prisma.meeting.findMany({
+  async meetings(@Query('status') status: string | undefined, @Req() req: Request) {
+    const meetings = await this.prisma.meeting.findMany({
       where: status ? { status: status as any } : undefined,
       orderBy: [{ meetingDate: 'desc' }, { createdAt: 'desc' }],
       take: 100,
-      select: { id: true, title: true, body: true, meetingDate: true, status: true, error: true, sourceUrl: true },
+      select: {
+        id: true, title: true, body: true, meetingDate: true, status: true, error: true, sourceUrl: true,
+        transcript: { select: { id: true } },
+        analysis: { select: { id: true } },
+      },
     });
+    const rows = meetings.map((m) => ({
+      id: m.id,
+      title: m.title,
+      body: m.body,
+      meetingDate: m.meetingDate,
+      status: m.status,
+      error: m.error,
+      sourceUrl: m.sourceUrl,
+      hasTranscript: Boolean(m.transcript),
+      hasAnalysis: Boolean(m.analysis),
+    }));
+    if (!String(req.headers.accept ?? '').includes('text/html')) return rows;
+    return adminMeetingsPage(
+      rows.map((m) => ({
+        id: m.id,
+        title: m.title,
+        body: m.body,
+        date: formatDate(m.meetingDate),
+        status: m.status,
+        error: m.error,
+        hasTranscript: m.hasTranscript,
+        hasAnalysis: m.hasAnalysis,
+      })),
+    );
   }
 
   /** Re-run (or force-run a SKIPPED meeting). Finished stages are reused. */
@@ -86,10 +138,12 @@ export class AdminController {
 
   @Get('meetings/:id/transcript')
   @UseGuards(AdminGuard)
-  async transcript(@Param('id') id: string) {
-    const t = await this.prisma.transcript.findUnique({ where: { meetingId: id } });
+  async transcript(@Param('id') id: string, @Req() req: Request) {
+    const t = await this.prisma.transcript.findUnique({ where: { meetingId: id }, include: { meeting: true } });
     if (!t) throw new NotFoundException();
-    return t;
+    if (!String(req.headers.accept ?? '').includes('text/html')) return t;
+    const segments = Array.isArray(t.segments) ? (t.segments as { start?: number; speaker?: string; text?: string }[]) : [];
+    return adminTranscriptPage(t.meeting, t.provider, segments);
   }
 
   // Signed link from the review email. GET shows a button; POST sends (so link-scanners can't trigger a send).

@@ -29,6 +29,7 @@ button:hover{filter:brightness(1.08)}
 .hits .hit:first-child{border-top:0;padding-top:4px}
 .hit h2{font-size:18px;line-height:1.3;margin:2px 0 6px}
 .hit p{margin:0;color:var(--muted);font-size:14px}
+.hit a{color:var(--accent)}
 .kicker{font-size:13px;color:var(--muted)}
 mark{background:#fff3c4;padding:0 2px;border-radius:2px}
 .note h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:28px 0 10px;font-weight:600}
@@ -41,6 +42,58 @@ footer{text-align:center;margin-top:18px}
 <div class="card">${inner}</div>
 ${below}
 <footer class="muted">Not an official Ketchikan Gateway Borough publication.</footer></main></body></html>`;
+}
+
+export interface AdminMeetingRow {
+  id: string;
+  title: string;
+  body: string;
+  date: string;
+  status: string;
+  error: string | null;
+  hasTranscript: boolean;
+  hasAnalysis: boolean;
+}
+
+/** Staff list. A transcript link means transcription finished, with or without Resend. */
+export function adminMeetingsPage(rows: AdminMeetingRow[]): string {
+  const list = rows.length
+    ? `<div class="hits">${rows
+        .map((m) => {
+          const links = [
+            m.hasTranscript ? `<a href="/admin/meetings/${esc(m.id)}/transcript">Transcript</a>` : '',
+            m.hasAnalysis ? `<a href="/admin/meetings/${esc(m.id)}/preview">Recap</a>` : '',
+          ].filter(Boolean);
+          return `<div class="hit"><div class="kicker">${esc(m.body)}${m.date ? ` · ${esc(m.date)}` : ''} · ${esc(m.status)}</div><h2>${esc(m.title)}</h2>${m.error ? `<p>${esc(m.error)}</p>` : ''}${links.length ? `<p>${links.join(' · ')}</p>` : ''}</div>`;
+        })
+        .join('')}</div>`
+    : '<p class="muted">No meetings yet. Discovery adds them from the archive.</p>';
+  return page(
+    'Meetings',
+    `<h1>Meetings</h1><p>A transcript link means that meeting has been transcribed. Email can wait until Resend is connected.</p>${list}`,
+    true,
+  );
+}
+
+export function adminTranscriptPage(
+  meeting: { id: string; title: string; body: string; meetingDate: Date | null },
+  provider: string,
+  segments: { start?: number; speaker?: string; text?: string }[],
+): string {
+  const lines = segments
+    .map((s) => {
+      const who = typeof s.speaker === 'string' && s.speaker ? `${esc(s.speaker)} · ` : '';
+      return `<p><span class="kicker">${who}${hms(Number(s.start) || 0)}</span><br>${esc(s.text)}</p>`;
+    })
+    .join('');
+  return page(
+    meeting.title,
+    `<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''} · ${esc(provider)} · ${segments.length} lines</div>
+<h1>${esc(meeting.title)}</h1>
+<p><a href="/admin/meetings">All meetings</a></p>
+${lines || '<p class="muted">This transcript is empty.</p>'}`,
+    true,
+  );
 }
 
 export function bodyCheckboxes(selected: string[] = []): string {

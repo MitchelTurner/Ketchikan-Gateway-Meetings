@@ -66,11 +66,11 @@ export class PipelineService {
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
       }
 
-      if (config.autoSend) {
+      await this.setStatus(meetingId, 'AWAITING_APPROVAL');
+      if (config.autoSend && config.emailReady) {
         await this.approve(meetingId);
       } else {
-        await this.setStatus(meetingId, 'AWAITING_APPROVAL');
-        await this.sendApprovalPreview(meetingId);
+        await this.sendReviewEmail(meetingId);
       }
     } catch (err) {
       await this.prisma.meeting.update({
@@ -87,6 +87,26 @@ export class PipelineService {
 
   approveUrl(meetingId: string) {
     return `${config.publicBaseUrl}/admin/meetings/${meetingId}/approve?sig=${sign(`approve:${meetingId}`)}`;
+  }
+
+  /**
+   * The transcript and recap are already saved. A missing Resend setup, or a
+   * send failure, must not mark that work FAILED.
+   */
+  private async sendReviewEmail(meetingId: string) {
+    if (!config.emailReady) {
+      const note = 'Transcript is ready. Review email skipped until Resend is configured.';
+      await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: note } });
+      this.log.warn(`${meetingId}: ${note}`);
+      return;
+    }
+    try {
+      await this.sendApprovalPreview(meetingId);
+    } catch (err) {
+      const note = `Transcript is ready. Review email was not sent: ${(err as Error).message}`.slice(0, 2000);
+      await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'AWAITING_APPROVAL', error: note } });
+      this.log.error(`${meetingId}: ${note}`);
+    }
   }
 
   async sendApprovalPreview(meetingId: string) {
