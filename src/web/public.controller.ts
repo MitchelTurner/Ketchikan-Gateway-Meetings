@@ -5,7 +5,7 @@ import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
 import { BODIES, esc, formatDate, randomToken } from '../util';
-import { bodyCheckboxes, NoteHit, noteDetailPage, notesSearchPage, page, signupPage } from './page';
+import { bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -24,7 +24,12 @@ export class PublicController {
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
   async home() {
-    return signupPage(await this.publishedHits('', '', 5));
+    const [recent, work, archiveCount] = await Promise.all([
+      this.publishedHits('', '', 5),
+      this.workHits(),
+      this.prisma.meeting.count(),
+    ]);
+    return signupPage(recent, work, archiveCount, formatDate(config.processSince) || 'the last two weeks');
   }
 
   /** Published recaps — the same notes subscribers get by email, after review. Newest first. */
@@ -34,6 +39,38 @@ export class PublicController {
     const query = String(q ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const bodyName = VALID_BODIES.has(String(body ?? '')) ? String(body) : '';
     return notesSearchPage(query, bodyName, await this.publishedHits(query, bodyName, 40));
+  }
+
+  /** Meetings inside the transcription window, newest first. Includes ones still downloading. */
+  private async workHits(): Promise<WorkHit[]> {
+    const meetings = await this.prisma.meeting.findMany({
+      where: { status: { not: 'SKIPPED' } },
+      include: { transcript: { select: { id: true } }, analysis: true },
+      orderBy: [{ meetingDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+      take: 20,
+    });
+    return meetings.map((m) => {
+      const digest = normalizeDigest(m.analysis?.data);
+      return {
+        id: m.id,
+        title: m.title,
+        body: m.body,
+        date: formatDate(m.meetingDate),
+        status: m.status,
+        detail: m.error || digest?.headline || (m.transcript ? 'Transcript is ready to read' : ''),
+      };
+    });
+  }
+
+  @Get('meetings/:id')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async meeting(@Param('id') id: string) {
+    const m = await this.prisma.meeting.findUnique({ where: { id }, include: { transcript: true, analysis: true } });
+    if (!m) return page('Not found', `<h1>That meeting isn't here</h1><p><a href="/">Back home</a></p>`);
+    const segments = Array.isArray(m.transcript?.segments)
+      ? (m.transcript.segments as { start?: number; speaker?: string; text?: string }[])
+      : [];
+    return meetingPage(m, normalizeDigest(m.analysis?.data), Boolean(m.analysis?.approvedAt), segments);
   }
 
   /** Approved recaps, newest meeting date first. A query searches within that order. */

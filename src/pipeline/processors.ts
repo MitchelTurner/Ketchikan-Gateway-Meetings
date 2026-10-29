@@ -43,13 +43,15 @@ export class EmailProcessor extends WorkerHost {
 @Injectable()
 export class DiscoveryScheduler implements OnApplicationBootstrap {
   private log = new Logger(DiscoveryScheduler.name);
-  constructor(@InjectQueue(Q_CONTROL) private controlQ: Queue) {}
+  constructor(@InjectQueue(Q_CONTROL) private controlQ: Queue, private discovery: DiscoveryService) {}
   async onApplicationBootstrap() {
     await this.controlQ.upsertJobScheduler(
       'discover-archive',
       { pattern: config.discoveryCron, tz: config.timezone },
       { name: 'discover', opts: { removeOnComplete: 50, removeOnFail: 50 } },
     );
-    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone})`);
+    await this.controlQ.add('discover', {}, { jobId: `discover-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
+    const unfinished = await this.discovery.requeueUnfinished();
+    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued for transcription.`);
   }
 }

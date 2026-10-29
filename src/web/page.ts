@@ -112,7 +112,50 @@ export function hitList(hits: NoteHit[]): string {
     .join('')}</div>`;
 }
 
-export const signupPage = (recent: NoteHit[]) =>
+const STATUS_LABEL: Record<string, string> = {
+  DISCOVERED: 'Found — waiting to download',
+  DOWNLOADING: 'Downloading audio',
+  TRANSCRIBING: 'Transcribing',
+  ANALYZING: 'Writing the recap',
+  AWAITING_APPROVAL: 'Transcript ready',
+  SENDING: 'Emailing subscribers',
+  SENT: 'Emailed',
+  FAILED: 'Stopped before it finished',
+  SKIPPED: 'Older than the transcription window',
+};
+
+export interface WorkHit {
+  id: string;
+  title: string;
+  body: string;
+  date: string;
+  status: string;
+  detail: string;
+}
+
+export function workList(hits: WorkHit[]): string {
+  if (!hits.length) return '';
+  return `<div class="hits">${hits
+    .map((h) => {
+      const label = STATUS_LABEL[h.status] || h.status;
+      return `<a class="hit" href="/meetings/${esc(h.id)}"><div class="kicker">${esc(h.body)}${h.date ? ` · ${esc(h.date)}` : ''} · ${esc(label)}</div><h2>${esc(h.title)}</h2>${h.detail ? `<p>${esc(h.detail)}</p>` : ''}</a>`;
+    })
+    .join('')}</div>`;
+}
+
+export function archiveCard(work: WorkHit[], archiveCount: number, sinceLabel: string): string {
+  const intro = archiveCount
+    ? `${archiveCount.toLocaleString('en-US')} clips found on the Borough video archive. Meetings on or after ${esc(sinceLabel)} are downloaded and transcribed.`
+    : 'No clips recorded yet. The archive is checked when the server starts, then every few hours. Refresh in a minute.';
+  const list = work.length
+    ? workList(work)
+    : archiveCount
+      ? '<p class="muted">Nothing in that window is waiting to be transcribed. Older clips are saved and left alone.</p>'
+      : '';
+  return `<div class="card"><h2 class="section" style="margin-top:0">From the archive</h2><p class="muted">${intro}</p>${list}</div>`;
+}
+
+export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string) =>
   page(
     config.newsletterName,
     `<h1>${esc(config.newsletterName)}</h1>
@@ -123,8 +166,9 @@ ${bodyCheckboxes()}
 <button type="submit">Subscribe</button></form>
 <p class="muted" style="margin-top:16px">Recaps are written by AI from automated transcripts and reviewed before sending. One-click unsubscribe in every email.</p>`,
     true,
-    `<div class="card"><h2 class="section" style="margin-top:0">Most recent</h2>
-${recent.length ? hitList(recent) : '<p class="muted">No recaps published yet. They show up here after a meeting is reviewed and emailed.</p>'}
+    `${archiveCard(work, archiveCount, sinceLabel)}
+<div class="card"><h2 class="section" style="margin-top:0">Most recent</h2>
+${recent.length ? hitList(recent) : '<p class="muted">No emailed recaps yet. Transcripts show up under From the archive as soon as they are ready.</p>'}
 <p style="margin:14px 0 0"><a href="/notes">Search all notes</a></p></div>`,
   );
 
@@ -143,7 +187,7 @@ export function notesSearchPage(q: string, body: string, hits: NoteHit[]): strin
   );
   const list = hits.length
     ? hitList(hits)
-    : `<p class="muted">${q ? `Nothing in the published notes matches “${esc(q)}”.` : 'No recaps published yet. They show up here after a meeting is reviewed and emailed.'}</p>`;
+    : `<p class="muted">${q ? `Nothing in the published notes matches “${esc(q)}”.` : 'No emailed recaps yet. Meetings found on the archive, and their transcripts, are on the <a href="/">home page</a>.'}</p>`;
   const count = hits.length ? `<p class="muted">${hits.length} ${hits.length === 1 ? 'note' : 'notes'}${q ? ` matching “${esc(q)}”` : ''}, newest first.</p>` : '';
   const heading = q ? 'Results' : 'Most recent';
   return page(
@@ -160,9 +204,42 @@ ${count}${list}`,
   );
 }
 
+export function transcriptHtml(segments: { start?: number; speaker?: string; text?: string }[] | null | undefined): string {
+  if (!segments?.length) return '';
+  return `<h2 class="section">Transcript</h2>${segments
+    .map((s) => {
+      const who = typeof s.speaker === 'string' && s.speaker ? `${esc(s.speaker)} · ` : '';
+      return `<p><span class="kicker">${who}${hms(Number(s.start) || 0)}</span><br>${esc(s.text)}</p>`;
+    })
+    .join('')}`;
+}
+
+export function meetingPage(
+  meeting: { id: string; title: string; body: string; meetingDate: Date | null; sourceUrl: string; platform: string; status: string; error: string | null },
+  digest: MeetingDigest | null,
+  approved: boolean,
+  segments: { start?: number; speaker?: string; text?: string }[],
+): string {
+  const status = STATUS_LABEL[meeting.status] || meeting.status;
+  const banner = `<p class="kicker">${esc(status)}</p>${meeting.error ? `<p>${esc(meeting.error)}</p>` : ''}${digest && !approved ? '<p class="muted">Draft recap — not emailed yet.</p>' : ''}`;
+  const transcript = transcriptHtml(segments);
+  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, backHref: '/', backLabel: 'Home' });
+  return page(
+    meeting.title,
+    `<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>
+<h1>${esc(meeting.title)}</h1>
+${banner}
+<p class="muted"><a href="${esc(meeting.sourceUrl)}">Watch the meeting</a></p>
+${transcript || '<p>No transcript yet. This page updates when transcription finishes.</p>'}
+<p style="margin-top:18px"><a href="/">Home</a></p>`,
+    true,
+  );
+}
+
 export function noteDetailPage(
   meeting: { id: string; title: string; body: string; meetingDate: Date | null; sourceUrl: string; platform: string },
   d: MeetingDigest,
+  opts: { banner?: string; after?: string; backHref?: string; backLabel?: string } = {},
 ): string {
   const ts = (t: number) =>
     `<a href="${esc(timestampUrl(meeting.sourceUrl, meeting.platform, t))}">${hms(t)}</a>`;
@@ -198,12 +275,13 @@ export function noteDetailPage(
   ];
   return page(
     d.headline,
-    `<div class="note"><div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>
+    `<div class="note">${opts.banner ?? ''}<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>
 <h1>${esc(d.headline)}</h1>
 <p class="muted">${esc(meeting.title)} · <a href="${esc(meeting.sourceUrl)}">Watch the meeting</a></p>
 ${sections}
 <div class="caveat">${caveats.map(esc).join('<br>')}</div>
-<p style="margin-top:18px"><a href="/notes">All notes</a></p></div>`,
+${opts.after ?? ''}
+<p style="margin-top:18px"><a href="${esc(opts.backHref ?? '/notes')}">${esc(opts.backLabel ?? 'All notes')}</a></p></div>`,
     true,
   );
 }

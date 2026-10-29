@@ -148,6 +148,23 @@ export class DiscoveryService {
     return { found: refs.length, added, queued };
   }
 
+  /**
+   * A deploy that uses the in-container Redis drops queued jobs. Meetings already
+   * saved but not yet transcribed are queued again. Skip the old archive rows.
+   */
+  async requeueUnfinished(): Promise<number> {
+    const pending = await this.prisma.meeting.findMany({
+      where: {
+        transcript: { is: null },
+        meetingDate: { gte: config.processSince },
+        status: { in: ['DISCOVERED', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'FAILED'] },
+      },
+      select: { id: true },
+    });
+    for (const m of pending) await this.enqueueProcess(m.id);
+    return pending.length;
+  }
+
   enqueueProcess(meetingId: string) {
     return this.processQ.add(
       'process',

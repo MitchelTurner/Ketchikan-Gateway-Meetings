@@ -47,7 +47,9 @@ Set `AUTO_SEND=true` to skip approval once you trust the output.
 Resend can stay unset while you check a transcript. The meeting lands on `AWAITING_APPROVAL` and the review email is skipped. Add `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL`, and `MAILING_ADDRESS`, then open the meeting again or re-run process to send the review.
 
 ## Public pages
-`/` signup (double opt-in) plus the five most recent notes · `/notes` newest published recaps, with search · `/notes/:id` one recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. Notes appear after a recap is approved and emailed, not while it's still a draft.
+`/` signup, the clips found on the archive, and meetings currently being transcribed · `/meetings/:id` one meeting's transcript and draft recap, before any email is sent · `/notes` newest published recaps, with search · `/notes/:id` one emailed recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. The home page lists a transcript as soon as it exists. `/notes` stays limited to recaps that were approved and emailed.
+
+The archive check runs when the server starts, not only on the 3-hour schedule. Meetings that were found but not transcribed (a deploy resets the in-container queue) are queued again.
 
 ## Costs (rough, per 3-hour meeting)
 AssemblyAI ≈ $0.45–1.10 depending on model · Claude Sonnet ≈ $0.30–0.60 (≈60–90k input tokens) · Resend free tier covers 3,000 emails/month.
