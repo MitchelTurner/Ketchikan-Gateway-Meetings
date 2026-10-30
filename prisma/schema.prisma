@@ -32,6 +32,8 @@ model Meeting {
   status      MeetingStatus @default(DISCOVERED)
   error       String?
   research    Research?
+  topics      MeetingTopic[]
+  topicsAt    DateTime? // when this meeting was last tagged with topics
   transcript  Transcript?
   analysis    Analysis?
   sends       EmailSend[]
@@ -82,10 +84,88 @@ model Subscriber {
   status      SubscriberStatus @default(PENDING)
   token       String           @unique // random; used for confirm / unsubscribe links
   bodies      String[] // empty = every body
+  topics      String[] // Topic slugs for deep-dive emails; empty = none
+  recaps      Boolean          @default(true) // false = topic emails only
   confirmedAt DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   sends       EmailSend[]
+  topicSends  TopicSend[]
+}
+
+enum TopicStatus {
+  SUGGESTED // Claude proposed it; waiting for you
+  APPROVED  // public page, signup option, deep dives
+  ARCHIVED  // hidden; never suggested again
+}
+
+/** An issue followed across meetings, e.g. "School budget" or "Ward Cove cruise dock". */
+model Topic {
+  id          String         @id @default(cuid())
+  slug        String         @unique
+  name        String
+  description String
+  status      TopicStatus    @default(SUGGESTED)
+  meetings    MeetingTopic[]
+  deepDives   DeepDive[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([status])
+}
+
+/** What happened on one topic at one meeting. */
+model MeetingTopic {
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  topicId   String
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  summary   String
+  t         Float    @default(0) // seconds into the recording
+  milestone Boolean  @default(false) // a big development: final vote, budget adopted, contract awarded…
+  why       String? // why it counts as a milestone
+  createdAt DateTime @default(now())
+
+  @@id([meetingId, topicId])
+  @@index([topicId])
+}
+
+enum DeepDiveStatus {
+  DRAFT    // waiting for your approval
+  SENDING
+  SENT
+  REJECTED
+}
+
+/** A single-topic explainer, written when a milestone lands. */
+model DeepDive {
+  id               String         @id @default(cuid())
+  topicId          String
+  topic            Topic          @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  triggerMeetingId String
+  model            String
+  data             Json // DeepDiveArticle
+  status           DeepDiveStatus @default(DRAFT)
+  approvedAt       DateTime?
+  sends            TopicSend[]
+  createdAt        DateTime       @default(now())
+
+  @@unique([topicId, triggerMeetingId])
+}
+
+model TopicSend {
+  id           String     @id @default(cuid())
+  deepDiveId   String
+  deepDive     DeepDive   @relation(fields: [deepDiveId], references: [id], onDelete: Cascade)
+  subscriberId String
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  status       String     @default("queued") // queued | sent | failed
+  providerId   String?
+  error        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([deepDiveId, subscriberId])
 }
 
 model EmailSend {

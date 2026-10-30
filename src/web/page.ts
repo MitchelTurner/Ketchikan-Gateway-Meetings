@@ -1,7 +1,10 @@
 import { config } from '../config';
 import { sourceLabel, timestampUrl } from '../email/render';
 import { MeetingDigest } from '../analysis/analysis.service';
-import { BODIES, esc, formatDate, hms, meetingParts, shortDate } from '../util';
+import type { DeepDiveArticle } from '../topics/deep-dive.service';
+import { BODIES, esc, formatDate, hms, meetingParts, shortDate, slugify } from '../util';
+
+export { slugify };
 
 const FONTS =
   'https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Public+Sans:wght@400;500;600;700&display=swap';
@@ -102,6 +105,11 @@ button:hover{background:var(--accent)}
 .state.work{color:#2b6577}.state.ready{color:#2c7a43}.state.done{color:var(--muted)}.state.stopped{color:var(--accent)}
 
 /* How we report */
+.timeline{list-style:none;margin:0;padding:0}
+.timeline li{position:relative;padding:0 0 22px 22px;border-left:2px solid var(--rule);margin-left:4px}
+.timeline li::before{content:"";position:absolute;left:-6px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--paper);border:2px solid var(--muted)}
+.timeline li.milestone{border-left-color:var(--accent)}.timeline li.milestone::before{background:var(--accent);border-color:var(--accent)}
+.timeline p{margin:4px 0 0;font-size:17px}.timeline p.meta{font-size:13px}.timeline .meta a{color:var(--accent)}
 .method{counter-reset:step;list-style:none;margin:0;padding:0}
 .method li{counter-increment:step;position:relative;padding:0 0 18px 44px;font-size:16px;line-height:1.5;color:var(--ink-2)}
 .method li::before{content:counter(step);position:absolute;left:0;top:-4px;font:500 30px/1 var(--serif);color:var(--accent)}
@@ -166,7 +174,7 @@ function masthead(compact: boolean): string {
 <div class="topline"><span>${esc(today())}</span><span>Ketchikan Gateway Borough, Alaska</span><span>Independent · Free</span></div>
 <div class="nameplate"><a href="/">${esc(config.newsletterName)}</a></div>
 <div class="tagline">Plain-language reporting on the Borough's public meetings</div>
-<nav class="sections" aria-label="Sections"><a href="/">Front page</a><a href="/notes">Recaps</a><a href="/#docket">The docket</a><a href="/#subscribe">Subscribe</a></nav>
+<nav class="sections" aria-label="Sections"><a href="/">Front page</a><a href="/notes">Recaps</a><a href="/topics">Topics</a><a href="/#docket">The docket</a><a href="/#subscribe">Subscribe</a></nav>
 </header>`;
 }
 
@@ -230,18 +238,6 @@ export function page(title: string, inner: string, wide = false, below = ''): st
     `<main class="wrap" style="max-width:${wide ? '760px' : '560px'}"><div class="sheet">${inner}</div>${below}</main>`,
     { seo: { noindex: true } },
   );
-}
-
-/** "assembly-approves-4m-harbor-bond" for readable, keyword-bearing URLs. */
-export function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80)
-    .replace(/-+[^-]*$/, (m) => (m.length > 20 ? '' : m));
 }
 
 export function noteHref(id: string, headline: string): string {
@@ -322,6 +318,20 @@ export function bodyCheckboxes(selected: string[] = []): string {
 ${BODIES.map(
   (b) => `<label><input type="checkbox" name="bodies" value="${esc(b.name)}"${selected.includes(b.name) ? ' checked' : ''}>${esc(b.name)}</label>`,
 ).join('')}</div><p class="hint">Leave them all off to get every meeting.</p></fieldset>`;
+}
+
+export interface TopicOption {
+  slug: string;
+  name: string;
+}
+
+/** Deep-dive opt-in. Only shown once you've approved at least one topic. */
+export function topicCheckboxes(topics: TopicOption[], selected: string[] = []): string {
+  if (!topics.length) return '';
+  return `<fieldset><legend>Follow a topic</legend><div class="chips">
+${topics
+  .map((t) => `<label><input type="checkbox" name="topics" value="${esc(t.slug)}"${selected.includes(t.slug) ? ' checked' : ''}>${esc(t.name)}</label>`)
+  .join('')}</div><p class="hint">Get an in-depth explainer when something big happens on these issues.</p></fieldset>`;
 }
 
 export interface NoteHit {
@@ -413,7 +423,7 @@ const METHOD = `<ol class="method">
 </ol>
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
 
-export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string) => {
+export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = []) => {
   // Lead with the newest reviewed recap; fall back to the newest draft so the page is never empty.
   const draft = work.find((w) => w.headline);
   const lead = recent[0]
@@ -466,6 +476,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
     <form method="post" action="/subscribe">
       <label for="email">Email address</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
       ${bodyCheckboxes()}
+      ${topicCheckboxes(topics)}
       <button type="submit">Subscribe</button>
     </form>
     <p class="hint">Confirm by email. One-click unsubscribe in every message.</p>
@@ -657,5 +668,149 @@ ${opts.after ?? ''}
         },
       },
     },
+  );
+}
+
+export interface TopicSummary {
+  slug: string;
+  name: string;
+  description: string;
+  meetings: number;
+  lastDate: string;
+  latest: string;
+}
+
+export function topicsIndexPage(topics: TopicSummary[]): string {
+  const list = topics.length
+    ? `<ul class="docket">${topics
+        .map(
+          (t) => `<li><a href="/topics/${esc(t.slug)}" style="grid-template-columns:minmax(0,1fr) auto"><div><h3>${esc(t.name)}</h3><p class="headline">${esc(t.description)}</p>${t.latest ? `<p class="meta" style="margin-top:6px">Latest${t.lastDate ? `, ${esc(t.lastDate)}` : ''}: ${esc(t.latest)}</p>` : ''}</div><span class="state done">${t.meetings} meeting${t.meetings === 1 ? '' : 's'}</span></a></li>`,
+        )
+        .join('')}</ul>`
+    : '<p class="empty">Topics appear here once the first issues have been picked out of the recaps.</p>';
+  const description = 'The issues that keep coming back to Ketchikan Gateway Borough meetings, each followed from meeting to meeting in plain language.';
+  return shell(
+    `Ketchikan issues to follow · ${config.newsletterName}`,
+    `<main class="wrap" style="max-width:820px"><div class="article">
+<div class="kicker">Topics</div>
+<h1>The issues, meeting by meeting</h1>
+<p class="dek">Some questions take months to settle. Each topic follows one issue across every meeting where it came up, with an in-depth explainer whenever something big happens.</p>
+<h2 class="rubric" style="margin-top:30px">Following now</h2>
+${list}
+<div class="signup" style="margin-top:36px"><h2>Follow an issue</h2><p>Pick topics when you <a href="/#subscribe">subscribe</a>, or from the link at the bottom of any email.</p></div>
+</div></main>`,
+    { seo: { description, canonical: '/topics' } },
+  );
+}
+
+export interface TopicTimelineRow {
+  meetingId: string;
+  body: string;
+  date: string;
+  summary: string;
+  milestone: boolean;
+  why: string | null;
+  href: string;
+  videoHref: string;
+}
+
+/** The evergreen page for one issue: the latest deep dive, then every meeting that touched it. */
+export function topicPage(
+  topic: { slug: string; name: string; description: string },
+  rows: TopicTimelineRow[],
+  dive: { article: DeepDiveArticle; date: Date; videoAt: (meetingId: string, t: number) => string } | null,
+  topics: TopicOption[],
+): string {
+  const a = dive?.article;
+  const ts = (meetingId: string, t: number) => (dive ? `<a class="ts" href="${esc(dive.videoAt(meetingId, t))}">▶ ${hms(t)}</a>` : '');
+  const list = (items: string[]) => (items.length ? `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>` : '');
+  const story = a
+    ? `<div class="body">
+${a.latest ? `<p>${esc(a.latest)}</p>` : ''}
+${a.whyItMatters ? `<h2>Why it matters</h2><p>${esc(a.whyItMatters)}</p>` : ''}
+${a.residents.length ? `<h2>What residents said</h2>${list(a.residents.map((x) => `<strong>${esc(x.who)}:</strong> ${esc(x.gist)} ${ts(x.meetingId, x.t)}`))}` : ''}
+${a.whatsNext.length ? `<h2>What's next</h2>${list(a.whatsNext.map((x) => `${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))}` : ''}
+${a.background.length ? `<h2>Background from local news</h2>${list(a.background.map((x) => `${esc(x.point)} ${x.sources.map((u) => `<a href="${esc(u)}">${esc(sourceLabel(u))}</a>`).join(' · ')}`))}` : ''}
+</div>`
+    : '';
+  const timeline = rows.length
+    ? `<ol class="timeline">${rows
+        .map(
+          (r) => `<li class="${r.milestone ? 'milestone' : ''}"><div class="meta">${esc(r.date || 'Date unknown')} · ${esc(r.body)}${r.milestone ? ' · <b>Key moment</b>' : ''}</div><p>${esc(r.summary)}</p><p class="meta"><a href="${esc(r.href)}">Meeting recap</a> · <a href="${esc(r.videoHref)}">Recording</a></p></li>`,
+        )
+        .join('')}</ol>`
+    : '<p class="empty">No meetings on this topic yet.</p>';
+  const headline = a?.headline || topic.name;
+  const description = a?.dek || `${topic.description} Followed across every Ketchikan Gateway Borough meeting where it came up.`;
+  return shell(
+    `${topic.name} in Ketchikan: ${a ? a.headline : 'what the Borough has decided'} · ${config.newsletterName}`,
+    `<main class="wrap" style="max-width:720px"><article class="article">
+<div class="kicker">Topic · ${esc(topic.name)}</div>
+<h1>${esc(headline)}</h1>
+${a?.dek ? `<p class="dek">${esc(a.dek)}</p>` : `<p class="dek">${esc(topic.description)}</p>`}
+<div class="byline"><span>${rows.length} meeting${rows.length === 1 ? '' : 's'}${dive ? ` · Updated ${esc(shortDate(dive.date, false))}` : ''}</span><a href="#follow">Follow this topic</a><a href="/topics">All topics</a></div>
+${story}
+<section><h2 class="rubric" style="margin-top:40px">How we got here</h2>${timeline}</section>
+<aside class="signup" id="follow" style="margin-top:40px"><h2>Follow ${esc(topic.name)}</h2><p>We'll email you an explainer when something big happens.</p>
+<form method="post" action="/subscribe"><label for="email">Email address</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
+<input type="hidden" name="topics" value="${esc(topic.slug)}"><input type="hidden" name="topicOnly" value="1">
+<button type="submit">Follow</button></form><p class="hint">Topic emails only. Add meeting recaps anytime from the link in each email.</p></aside>
+</article></main>`,
+    {
+      seo: {
+        description: describe(description),
+        canonical: `/topics/${topic.slug}`,
+        ogType: dive ? 'article' : 'website',
+        jsonLd: dive
+          ? {
+              '@context': 'https://schema.org',
+              '@type': 'NewsArticle',
+              headline: headline.slice(0, 110),
+              description: describe(description),
+              dateModified: dive.date.toISOString().slice(0, 10),
+              author: { '@type': 'Organization', name: config.newsletterName },
+              publisher: { '@type': 'Organization', name: config.newsletterName },
+              about: { '@type': 'Thing', name: `${topic.name}, Ketchikan Gateway Borough` },
+            }
+          : undefined,
+      },
+    },
+  );
+}
+
+export interface AdminTopicRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  status: string;
+  meetings: number;
+  milestones: number;
+  dives: { id: string; status: string; createdAt: Date; headline: string; previewHref: string; approveHref: string }[];
+}
+
+/** Suggestions to approve or archive, approved topics, and deep-dive drafts. */
+export function adminTopicsPage(rows: AdminTopicRow[]): string {
+  const btn = (action: string, label: string, style = '') =>
+    `<form method="post" action="${esc(action)}" style="display:inline"><button type="submit" style="width:auto;margin:0 6px 0 0;padding:8px 12px;font-size:11px;${style}">${esc(label)}</button></form>`;
+  const card = (t: AdminTopicRow) => `<div class="hit"><div class="kicker">${esc(t.status)} · ${t.meetings} meeting${t.meetings === 1 ? '' : 's'} · ${t.milestones} key moment${t.milestones === 1 ? '' : 's'}</div>
+<h2>${esc(t.name)}</h2><p>${esc(t.description)}</p>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px">${
+    t.status === 'SUGGESTED'
+      ? btn(`/admin/topics/${t.id}/approve`, 'Approve') + btn(`/admin/topics/${t.id}/archive`, 'Not a topic', 'background:#fff;color:#141412;border:1px solid #c9c2b2')
+      : `${btn(`/admin/topics/${t.id}/dive`, 'Write a deep dive now')}${btn(`/admin/topics/${t.id}/archive`, 'Archive', 'background:#fff;color:#141412;border:1px solid #c9c2b2')}<a href="/topics/${esc(t.slug)}" class="meta">Public page →</a>`
+  }</div>
+${t.dives.length ? `<ul class="parts" style="margin-top:10px">${t.dives.map((d) => `<li>${esc(d.status)} · ${esc(d.headline)} · <a href="${esc(d.previewHref)}">Preview</a>${d.status === 'DRAFT' ? ` · <a href="${esc(d.approveHref)}">Approve and send</a>` : ''}</li>`).join('')}</ul>` : ''}</div>`;
+  const suggested = rows.filter((r) => r.status === 'SUGGESTED');
+  const approved = rows.filter((r) => r.status === 'APPROVED');
+  return page(
+    'Topics',
+    `<h1>Topics</h1>
+<p>Claude suggests issues as it reads each recap; the ones raised at the most meetings are at the top. Approved topics get a public page, a signup option, and a deep dive drafted automatically after each key moment.</p>
+<p>${btn('/admin/topics/scan', 'Tag older recaps now')}</p>
+<h2 class="section">Suggested (${suggested.length})</h2>${suggested.length ? `<div class="hits">${suggested.map(card).join('')}</div>` : '<p class="muted">No suggestions waiting.</p>'}
+<h2 class="section">Approved (${approved.length})</h2>${approved.length ? `<div class="hits">${approved.map(card).join('')}</div>` : '<p class="muted">None yet.</p>'}
+<p><a href="/admin/meetings">Meetings</a></p>`,
+    true,
   );
 }

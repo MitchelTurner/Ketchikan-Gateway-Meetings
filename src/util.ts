@@ -100,3 +100,15 @@ export function meetingParts(title: string, body: string): string[] {
     .map((s) => s.replace(/\s+/g, ' ').replace(/^[\s,–—:|-]+|[\s,–—:|-]+$/g, '').trim())
     .filter((s) => s && s.toLowerCase() !== body.toLowerCase());
 }
+
+/** "assembly-approves-4m-harbor-bond" for readable, keyword-bearing URLs. */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+[^-]*$/, (m) => (m.length > 20 ? '' : m));
+}

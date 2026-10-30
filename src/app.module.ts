@@ -9,6 +9,8 @@ import { PipelineService } from './pipeline/pipeline.service';
 import { ControlProcessor, DiscoveryScheduler, EmailProcessor, ProcessProcessor } from './pipeline/processors';
 import { PrismaService } from './prisma.service';
 import { ResearchService } from './research/research.service';
+import { DeepDiveService } from './topics/deep-dive.service';
+import { TopicsService } from './topics/topics.service';
 import { Q_CONTROL, Q_EMAIL, Q_PROCESS } from './queues';
 import { TranscriptionService } from './transcription/transcription.service';
 import { AdminController } from './web/admin.controller';
@@ -24,6 +26,8 @@ import { PublicController } from './web/public.controller';
     PrismaService,
     MediaService,
     ResearchService,
+    TopicsService,
+    DeepDiveService,
     TranscriptionService,
     AnalysisService,
     EmailService,

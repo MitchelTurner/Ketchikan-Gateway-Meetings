@@ -13,6 +13,7 @@ import { MediaService } from '../media/media.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL, Q_EMAIL } from '../queues';
 import { MeetingContext, normalizeContext, ResearchService, vocabulary } from '../research/research.service';
+import { TopicsService } from '../topics/topics.service';
 import { Segment, TranscriptionService } from '../transcription/transcription.service';
 import { esc, sign } from '../util';
 
@@ -31,6 +32,7 @@ export class PipelineService {
     private prisma: PrismaService,
     private media: MediaService,
     private research: ResearchService,
+    private topics: TopicsService,
     private transcription: TranscriptionService,
     private analysis: AnalysisService,
     private email: EmailService,
@@ -76,6 +78,13 @@ export class PipelineService {
         await this.setStatus(meetingId, 'ANALYZING');
         const digest = await this.analysis.analyze(meeting, segments, context);
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
+      }
+
+      // Topics are extra: a failure is logged and retried by the next tag-topics run.
+      if (!meeting.analysis || !meeting.topicsAt) {
+        await this.topics
+          .tagMeeting(meetingId, { allowDeepDive: !isBackfill(meeting) })
+          .catch((err) => this.log.warn(`${meetingId}: topic tagging failed: ${(err as Error).message}`));
       }
 
       await this.setStatus(meetingId, 'AWAITING_APPROVAL');
@@ -192,6 +201,7 @@ export class PipelineService {
     const subs = await this.prisma.subscriber.findMany({
       where: {
         status: 'CONFIRMED',
+        recaps: true,
         OR: [{ bodies: { isEmpty: true } }, { bodies: { has: meeting.body } }],
       },
       select: { id: true },

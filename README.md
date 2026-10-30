@@ -46,6 +46,16 @@ Set `PROCESS_SINCE` back, e.g. `PROCESS_SINCE=2023-11-01` for three years, and r
 - **Cost:** about $1–2 per meeting (transcription + research + recap). 200 meetings ≈ $200–400. Narrow it by moving `PROCESS_SINCE` forward; meetings already done are kept.
 - Only clips listed on the Granicus archive can be pulled. `GET /admin/inspect` shows how far back it goes.
 
+## Topics and deep dives
+Some issues run for months: a budget, a harbor project, a zoning case. Topics follow one issue across meetings.
+
+1. **Claude suggests topics.** After each recap, Claude tags the meeting with the topics it touched and suggests new ones. On start, recaps that haven't been tagged yet (including the backfill) are tagged too, so suggestions reflect the whole year.
+2. **You approve them** at `/admin/topics` (open `/admin/topics?token=$ADMIN_TOKEN` once to sign in). Suggestions are ranked by how many meetings raised them. "Not a topic" archives one so it's never suggested again.
+3. **Approved topics** get a public page at `/topics/:slug` with a timeline of every meeting, and appear as a choice on the signup form and the preferences page. The topic page has a "Follow" form that signs up for topic emails only.
+4. **Key moments trigger a deep dive.** When a meeting is a milestone for an approved topic (a final vote, a budget adopted, a contract awarded, a hearing held, a major new proposal), Claude drafts an explainer from every meeting on that topic plus local news coverage: what just happened, why it matters, how we got here, what residents said, what's next. It's emailed to you for review like a recap, then sent only to subscribers following that topic, and becomes the story on the topic page. `AUTO_SEND=true` skips the review. Backfilled meetings never trigger one; use "Write a deep dive now" on `/admin/topics` for a first explainer.
+
+Subscribers who follow a topic from its page get topic emails only (`recaps = false`); they can add meeting recaps from the preferences link. Cost: tagging ≈ $0.01–0.03 per meeting, a deep dive ≈ $0.10–0.40.
+
 ## Names and news coverage
 Before downloading, Claude searches the web (`RESEARCH_DOMAINS`: the Borough site, Granicus agendas, Ketchikan Daily News, KRBD, Alaska Public Media, Alaska Beacon, ADN, …) for:
 - **The roster**: members of the body, Mayor, Manager, Clerk, Attorney and department heads, spelled as the Borough publishes them.
@@ -72,7 +82,7 @@ The result is saved per meeting (`Research` table) and used three ways:
 Resend can stay unset while you check a transcript. The meeting lands on `AWAITING_APPROVAL` and the review email is skipped. Add `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL`, and `MAILING_ADDRESS`, then open the meeting again or re-run process to send the review.
 
 ## Public pages
-`/` signup, the clips found on the archive, and meetings currently being transcribed · `/meetings/:id` one meeting's transcript and draft recap, before any email is sent · `/notes` newest published recaps, with search · `/notes/:id` one emailed recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. The home page lists a transcript as soon as it exists. `/notes` stays limited to recaps that were approved and emailed.
+`/` front page: signup, latest recaps, the docket of meetings being transcribed · `/topics` and `/topics/:slug` issues followed across meetings · `/meetings/:id` one meeting's transcript and draft recap, before any email is sent · `/notes` newest published recaps, with search · `/notes/:id` one emailed recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. The home page lists a transcript as soon as it exists. `/notes` stays limited to recaps that were approved and emailed.
 
 The archive check runs when the server starts, not only on the 3-hour schedule. Meetings in the processing window that stopped early (a deploy resets the in-container queue) are queued again, including ones that already have a transcript but never got a recap. Download and transcription are skipped when those stages are already saved.
 

@@ -4,16 +4,25 @@ import { Job, Queue } from 'bullmq';
 import { config } from '../config';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { Q_CONTROL, Q_EMAIL, Q_PROCESS } from '../queues';
+import { DeepDiveService } from '../topics/deep-dive.service';
+import { TopicsService } from '../topics/topics.service';
 import { PipelineService } from './pipeline.service';
 
 @Processor(Q_CONTROL)
 export class ControlProcessor extends WorkerHost {
-  constructor(private discovery: DiscoveryService, private pipeline: PipelineService) {
+  constructor(
+    private discovery: DiscoveryService,
+    private pipeline: PipelineService,
+    private topics: TopicsService,
+    private dives: DeepDiveService,
+  ) {
     super();
   }
   async process(job: Job) {
     if (job.name === 'discover') return this.discovery.discover();
     if (job.name === 'deliver') return this.pipeline.deliver(job.data.meetingId);
+    if (job.name === 'tag-topics') return this.topics.tagUntagged();
+    if (job.name === 'deep-dive') return this.dives.write(job.data.topicId, job.data.triggerMeetingId);
   }
 }
 
@@ -31,11 +40,12 @@ export class ProcessProcessor extends WorkerHost {
 // Resend's default limit is a few requests/second; stay under it.
 @Processor(Q_EMAIL, { concurrency: 2, limiter: { max: Number(process.env.EMAIL_RATE_PER_SEC || 2), duration: 1000 } })
 export class EmailProcessor extends WorkerHost {
-  constructor(private pipeline: PipelineService) {
+  constructor(private pipeline: PipelineService, private dives: DeepDiveService) {
     super();
   }
-  async process(job: Job<{ meetingId: string; subscriberId: string }>) {
-    await this.pipeline.sendOne(job.data.meetingId, job.data.subscriberId);
+  async process(job: Job<{ meetingId?: string; deepDiveId?: string; subscriberId: string }>) {
+    if (job.name === 'send-dive') return this.dives.sendOne(job.data.deepDiveId!, job.data.subscriberId);
+    await this.pipeline.sendOne(job.data.meetingId!, job.data.subscriberId);
   }
 }
 
@@ -52,6 +62,8 @@ export class DiscoveryScheduler implements OnApplicationBootstrap {
     );
     await this.controlQ.add('discover', {}, { jobId: `discover-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
     const unfinished = (await this.discovery.requeueUnfinished()) + (await this.discovery.promoteSkipped());
+    // Recaps written before topics existed (or while tagging failed) get tagged in the background.
+    await this.controlQ.add('tag-topics', {}, { jobId: `tag-topics-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
     this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued.`);
   }
 }
