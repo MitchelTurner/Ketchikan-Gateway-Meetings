@@ -211,12 +211,13 @@ a.hit:hover h2{color:var(--teal)}
 .steps li.done{color:var(--text-2)}.steps li.done::before{content:"✓";background:var(--green);border-color:var(--green);color:var(--bg)}
 .steps li.now{color:var(--text)}.steps li.now::before{border-color:var(--teal);color:var(--teal);box-shadow:0 0 0 4px color-mix(in srgb,var(--teal) 15%,transparent)}
 
-/* Footer */
-footer.site{position:relative;margin-top:48px;border-top:1px solid var(--line);padding:32px 0 20px;font:400 14px/1.65 var(--sans);color:var(--muted)}
-footer.site p{max-width:34em;margin:0}
-.fine{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font:400 12.5px/1.5 var(--sans);color:var(--muted)}
-.fine a{color:var(--text-2);text-decoration:none}
-.fine a:hover{color:var(--teal)}
+/* Footer: the note, then the links the bottom bar doesn't cover. */
+footer.site{position:relative;margin-top:56px;border-top:1px solid var(--line);padding:28px 0 8px;font:400 15px/1.6 var(--sans);color:var(--text-2)}
+footer.site p{max-width:38em;margin:0}
+footer.site nav{display:flex;flex-wrap:wrap;gap:0 22px;margin-top:6px}
+footer.site nav a{display:inline-flex;align-items:center;min-height:44px;color:var(--text);text-decoration:none;font:500 15px/1.2 var(--sans);letter-spacing:-.011em}
+footer.site nav a:hover{color:var(--teal)}
+footer.site .where{margin-top:2px;font:400 12.5px/1.4 var(--mono);letter-spacing:.01em;color:var(--muted)}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}html{scroll-behavior:auto}}
 @media (min-width:640px){
@@ -276,7 +277,12 @@ window.addEventListener('hashchange',mark);
 function footer(): string {
   return `<footer class="site"><div class="wrap">
 <p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough publication. Recaps are written with AI from the Borough's own recordings and reviewed before they're published.</p>
-<div class="fine"><a href="/#how">How we report</a><a href="/sitemap.xml">Sitemap</a><span>Ketchikan · 55.34°N 131.65°W</span></div>
+<nav aria-label="About this site">
+<a href="/#how">How we report</a>
+<a href="${esc(config.archiveUrl)}">Borough archive</a>
+<a href="/#subscribe">Get the recap</a>
+</nav>
+<p class="where">Ketchikan · 55.34°N 131.65°W</p>
 </div></footer>`;
 }
 
