@@ -13,8 +13,16 @@ import { MediaService } from '../media/media.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL, Q_EMAIL } from '../queues';
 import { MeetingContext, normalizeContext, ResearchService, vocabulary } from '../research/research.service';
+import { TopicsService } from '../topics/topics.service';
 import { Segment, TranscriptionService } from '../transcription/transcription.service';
 import { esc, sign } from '../util';
+
+const BACKFILL_NOTE = 'Backfill: older than EMAIL_SINCE, so no email is sent. Approve to publish it on /notes.';
+
+/** Older meetings are published on /notes and never emailed. A meeting with no date is treated as current. */
+export function isBackfill(m: { meetingDate: Date | null }): boolean {
+  return !!m.meetingDate && m.meetingDate < config.emailSince;
+}
 
 @Injectable()
 export class PipelineService {
@@ -24,6 +32,7 @@ export class PipelineService {
     private prisma: PrismaService,
     private media: MediaService,
     private research: ResearchService,
+    private topics: TopicsService,
     private transcription: TranscriptionService,
     private analysis: AnalysisService,
     private email: EmailService,
@@ -37,7 +46,7 @@ export class PipelineService {
       where: { id: meetingId },
       include: { research: true, transcript: true, analysis: true },
     });
-    if (['SENDING', 'SENT'].includes(meeting.status)) return;
+    if (['SENDING', 'SENT', 'PUBLISHED'].includes(meeting.status)) return;
 
     try {
       let context = meeting.research ? normalizeContext(meeting.research.data) : null;
@@ -71,8 +80,19 @@ export class PipelineService {
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
       }
 
+      // Topics are extra: a failure is logged and retried by the next tag-topics run.
+      if (!meeting.analysis || !meeting.topicsAt) {
+        await this.topics
+          .tagMeeting(meetingId, { allowDeepDive: !isBackfill(meeting) })
+          .catch((err) => this.log.warn(`${meetingId}: topic tagging failed: ${(err as Error).message}`));
+      }
+
       await this.setStatus(meetingId, 'AWAITING_APPROVAL');
-      if (config.autoSend && config.emailReady) {
+      if (isBackfill(meeting)) {
+        // Hundreds of old meetings must not each send a review email.
+        if (config.autoSend) await this.approve(meetingId);
+        else await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: BACKFILL_NOTE } });
+      } else if (config.autoSend && config.emailReady) {
         await this.approve(meetingId);
       } else {
         await this.sendReviewEmail(meetingId);
@@ -109,8 +129,12 @@ export class PipelineService {
     return this.prisma.meeting.update({ where: { id }, data: { status, error: null } });
   }
 
+  approvePath(meetingId: string) {
+    return `/admin/meetings/${meetingId}/approve?sig=${sign(`approve:${meetingId}`)}`;
+  }
+
   approveUrl(meetingId: string) {
-    return `${config.publicBaseUrl}/admin/meetings/${meetingId}/approve?sig=${sign(`approve:${meetingId}`)}`;
+    return `${config.publicBaseUrl}${this.approvePath(meetingId)}`;
   }
 
   /**
@@ -150,10 +174,25 @@ export class PipelineService {
     });
   }
 
-  /** Marks the recap approved and fans out to subscribers. */
+  /** Marks the recap approved and fans out to subscribers. Backfill is published on /notes only. */
   async approve(meetingId: string) {
     await this.prisma.analysis.update({ where: { meetingId }, data: { approvedAt: new Date() } });
+    const meeting = await this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } });
+    if (isBackfill(meeting)) {
+      await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'PUBLISHED', error: null } });
+      return;
+    }
     await this.controlQ.add('deliver', { meetingId }, { jobId: `deliver-${meetingId}`, removeOnComplete: 200 });
+  }
+
+  /** Approves every drafted backfill recap at once. */
+  async publishBackfill(): Promise<number> {
+    const rows = await this.prisma.meeting.findMany({
+      where: { status: 'AWAITING_APPROVAL', meetingDate: { lt: config.emailSince }, analysis: { is: { approvedAt: null } } },
+      select: { id: true },
+    });
+    for (const m of rows) await this.approve(m.id);
+    return rows.length;
   }
 
   async deliver(meetingId: string) {
@@ -162,6 +201,7 @@ export class PipelineService {
     const subs = await this.prisma.subscriber.findMany({
       where: {
         status: 'CONFIRMED',
+        recaps: true,
         OR: [{ bodies: { isEmpty: true } }, { bodies: { has: meeting.body } }],
       },
       select: { id: true },

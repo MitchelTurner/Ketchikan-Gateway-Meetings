@@ -1,19 +1,22 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   CanActivate, Controller, ExecutionContext, ForbiddenException, Get, Header, HttpCode, Injectable,
-  NotFoundException, Param, Post, Query, Req, UseGuards,
+  NotFoundException, Param, Post, Query, Req, Res, UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { renderDiveHtml } from '../email/dive-render';
+import { DeepDiveService } from '../topics/deep-dive.service';
+import { TopicsService } from '../topics/topics.service';
 import { Queue } from 'bullmq';
 import { timingSafeEqual } from 'crypto';
 import { config } from '../config';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { renderHtml } from '../email/render';
-import { PipelineService } from '../pipeline/pipeline.service';
+import { isBackfill, PipelineService } from '../pipeline/pipeline.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL } from '../queues';
 import { esc, formatDate, verify } from '../util';
-import { adminMeetingsPage, adminTranscriptPage, page } from './page';
+import { adminMeetingsPage, adminTopicsPage, adminTranscriptPage, page } from './page';
 
 @Injectable()
 class AdminGuard implements CanActivate {
@@ -54,8 +57,106 @@ export class AdminController {
     private prisma: PrismaService,
     private discovery: DiscoveryService,
     private pipeline: PipelineService,
+    private topics: TopicsService,
+    private dives: DeepDiveService,
     @InjectQueue(Q_CONTROL) private controlQ: Queue,
   ) {}
+
+  @Get('topics')
+  @UseGuards(AdminGuard)
+  async topicList(@Req() req: Request) {
+    const rows = await this.topics.adminList();
+    if (!String(req.headers.accept ?? '').includes('text/html')) return rows;
+    return adminTopicsPage(
+      rows.map((t) => ({
+        ...t,
+        dives: t.dives.map((d) => ({
+          ...d,
+          previewHref: `/admin/dives/${d.id}/preview`,
+          approveHref: this.dives.approvePath(d.id),
+        })),
+      })),
+    );
+  }
+
+  @Post('topics/:id/approve')
+  @UseGuards(AdminGuard)
+  async approveTopic(@Param('id') id: string, @Res() res: Response) {
+    await this.prisma.topic.update({ where: { id }, data: { status: 'APPROVED' } });
+    res.redirect(303, '/admin/topics');
+  }
+
+  @Post('topics/:id/archive')
+  @UseGuards(AdminGuard)
+  async archiveTopic(@Param('id') id: string, @Res() res: Response) {
+    await this.prisma.topic.update({ where: { id }, data: { status: 'ARCHIVED' } });
+    res.redirect(303, '/admin/topics');
+  }
+
+  /** Writes a deep dive from the topic's most recent meeting, without waiting for a milestone. */
+  @Post('topics/:id/dive')
+  @UseGuards(AdminGuard)
+  async diveNow(@Param('id') id: string, @Res() res: Response) {
+    const last = await this.prisma.meetingTopic.findFirst({
+      where: { topicId: id },
+      orderBy: { meeting: { meetingDate: 'desc' } },
+      select: { meetingId: true },
+    });
+    if (!last) throw new NotFoundException('No meetings on this topic yet');
+    await this.topics.queueDeepDive(id, last.meetingId);
+    res.redirect(303, '/admin/topics');
+  }
+
+  @Post('topics/scan')
+  @UseGuards(AdminGuard)
+  async scanTopics(@Res() res: Response) {
+    await this.controlQ.add('tag-topics', {}, { removeOnComplete: 20, removeOnFail: 20 });
+    res.redirect(303, '/admin/topics');
+  }
+
+  @Get('dives/:id/preview')
+  @UseGuards(AdminGuard)
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async divePreview(@Param('id') id: string) {
+    return renderDiveHtml(await this.dives.renderInput(id, null));
+  }
+
+  // Signed link from the review email, like recap approval: GET shows a button, POST sends.
+  @Get('dives/:id/approve')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async diveApproveForm(@Param('id') id: string, @Query('sig') sig: string) {
+    if (!verify(`approve-dive:${id}`, sig)) throw new ForbiddenException();
+    const d = await this.prisma.deepDive.findUnique({ where: { id }, include: { topic: true } });
+    if (!d) throw new NotFoundException();
+    if (d.status !== 'DRAFT') return page('Already handled', `<h1>Already ${esc(d.status.toLowerCase())}</h1><p><a href="/admin/topics">Topics</a></p>`);
+    const n = await this.prisma.subscriber.count({ where: { status: 'CONFIRMED', topics: { has: d.topic.slug } } });
+    const headline = String((d.data as { headline?: string }).headline ?? '');
+    return page('Send deep dive', `<h1>Send this deep dive?</h1><p><strong>${esc(headline)}</strong><br>Goes to ${n} subscriber${n === 1 ? '' : 's'} following ${esc(d.topic.name)}, and replaces the story on its topic page.</p>
+<p><a href="/admin/dives/${esc(id)}/preview">Read it first</a></p>
+<form method="post" action="/admin/dives/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Approve and send</button></form>
+<form method="post" action="/admin/dives/${esc(id)}/reject?sig=${esc(sig)}"><button type="submit" style="background:#fff;color:#141412;border:1px solid #c9c2b2">Don't send</button></form>`);
+  }
+
+  @Post('dives/:id/approve')
+  @HttpCode(200)
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async diveApprove(@Param('id') id: string, @Query('sig') sig: string) {
+    if (!verify(`approve-dive:${id}`, sig)) throw new ForbiddenException();
+    const d = await this.prisma.deepDive.findUnique({ where: { id } });
+    if (!d) throw new NotFoundException();
+    if (d.status === 'DRAFT') await this.dives.approve(id);
+    return page('Sending', `<h1>Sending</h1><p>The deep dive is on its way and on the topic page.</p>`);
+  }
+
+  @Post('dives/:id/reject')
+  @HttpCode(200)
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async diveReject(@Param('id') id: string, @Query('sig') sig: string) {
+    if (!verify(`approve-dive:${id}`, sig)) throw new ForbiddenException();
+    const d = await this.prisma.deepDive.findUnique({ where: { id } });
+    if (d?.status === 'DRAFT') await this.dives.reject(id);
+    return page('Not sent', `<h1>Not sent</h1><p>The draft is kept but won't go out. <a href="/admin/topics">Topics</a></p>`);
+  }
 
   /** Shows what the scraper sees on the archive page. Run this first after deploying. */
   @Get('inspect')
@@ -106,6 +207,7 @@ export class AdminController {
         error: m.error,
         hasTranscript: m.hasTranscript,
         hasAnalysis: m.hasAnalysis,
+        approveHref: m.status === 'AWAITING_APPROVAL' && m.hasAnalysis ? this.pipeline.approvePath(m.id) : undefined,
       })),
     );
   }
@@ -120,6 +222,8 @@ export class AdminController {
       // News coverage often lands days after the meeting; look again.
       await this.prisma.analysis.deleteMany({ where: { meetingId: id } });
       await this.prisma.research.deleteMany({ where: { meetingId: id } });
+      await this.prisma.meetingTopic.deleteMany({ where: { meetingId: id } });
+      await this.prisma.meeting.update({ where: { id }, data: { topicsAt: null } });
     }
     await this.prisma.meeting.update({ where: { id }, data: { status: 'DISCOVERED', error: null } });
     await this.discovery.enqueueProcess(id);
@@ -158,7 +262,11 @@ export class AdminController {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
     if (!m) throw new NotFoundException();
     if (m.analysis?.approvedAt) return page('Already approved', `<h1>Already approved</h1><p>${esc(m.title)} went out ${esc(m.analysis.approvedAt.toISOString())}.</p>`);
-    const n = await this.prisma.subscriber.count({ where: { status: 'CONFIRMED', OR: [{ bodies: { isEmpty: true } }, { bodies: { has: m.body } }] } });
+    if (isBackfill(m)) {
+      return page('Publish recap', `<h1>Publish this recap?</h1><p><strong>${esc(m.title)}</strong><br>An older meeting: it goes on the public notes page and is not emailed.</p>
+<form method="post" action="/admin/meetings/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Publish</button></form>`);
+    }
+    const n = await this.prisma.subscriber.count({ where: { status: 'CONFIRMED', recaps: true, OR: [{ bodies: { isEmpty: true } }, { bodies: { has: m.body } }] } });
     return page('Approve recap', `<h1>Send this recap?</h1><p><strong>${esc(m.title)}</strong><br>Goes to ${n} subscriber${n === 1 ? '' : 's'}.</p>
 <form method="post" action="/admin/meetings/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Approve and send</button></form>`);
   }
@@ -171,7 +279,16 @@ export class AdminController {
     const a = await this.prisma.analysis.findUnique({ where: { meetingId: id } });
     if (!a) throw new NotFoundException();
     if (!a.approvedAt) await this.pipeline.approve(id);
+    const m = await this.prisma.meeting.findUnique({ where: { id } });
+    if (m && isBackfill(m)) return page('Published', `<h1>Published</h1><p>The recap is on the <a href="/notes">notes page</a>. No email was sent.</p>`);
     return page('Sending', `<h1>Sending</h1><p>The recap is on its way to subscribers.</p>`);
+  }
+
+  /** Publishes every drafted recap older than EMAIL_SINCE on /notes. Sends no email. */
+  @Post('publish-backfill')
+  @UseGuards(AdminGuard)
+  async publishBackfill() {
+    return { published: await this.pipeline.publishBackfill() };
   }
 
   @Get('stats')

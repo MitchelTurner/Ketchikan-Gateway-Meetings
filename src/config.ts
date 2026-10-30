@@ -27,6 +27,15 @@ export const config = {
     if (v) return new Date(`${v}T00:00:00Z`);
     return new Date(Date.now() - 14 * 24 * 3600 * 1000);
   },
+  /**
+   * Meetings dated before this are backfill: transcribed and published on /notes,
+   * but never emailed (no review email, no subscriber email). Default: 14 days ago.
+   */
+  get emailSince(): Date {
+    const v = process.env.EMAIL_SINCE;
+    if (v) return new Date(`${v}T00:00:00Z`);
+    return new Date(Date.now() - 14 * 24 * 3600 * 1000);
+  },
   get channelListLimit() { return Number(opt('CHANNEL_LIST_LIMIT', '30')); },
 
   // Media

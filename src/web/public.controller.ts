@@ -4,8 +4,12 @@ import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
-import { BODIES, esc, formatDate, randomToken } from '../util';
-import { bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
+import { BODIES, esc, randomToken, shortDate } from '../util';
+import { timestampUrl } from '../email/render';
+import type { DeepDiveArticle } from '../topics/deep-dive.service';
+import {
+  bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, topicCheckboxes, topicPage, topicsIndexPage, WorkHit,
+} from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -15,6 +19,38 @@ const normBodies = (v: unknown): string[] =>
 export class PublicController {
   private log = new Logger(PublicController.name);
   constructor(private prisma: PrismaService, private email: EmailService) {}
+
+  @Get('robots.txt')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  robots() {
+    const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
+    return `User-agent: *\nDisallow: /admin/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
+  }
+
+  /** Every reviewed recap, so search engines find them without crawling the search page. */
+  @Get('sitemap.xml')
+  @Header('Content-Type', 'application/xml; charset=utf-8')
+  async sitemap() {
+    const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
+    const notes = await this.prisma.meeting.findMany({
+      where: { analysis: { is: { approvedAt: { not: null } } } },
+      select: { id: true, updatedAt: true, analysis: { select: { data: true } } },
+      orderBy: { meetingDate: 'desc' },
+      take: 5000,
+    });
+    const topics = await this.prisma.topic.findMany({ where: { status: 'APPROVED' }, select: { slug: true, updatedAt: true } });
+    const urls = [
+      `<url><loc>${esc(base)}/</loc><changefreq>daily</changefreq></url>`,
+      `<url><loc>${esc(base)}/notes</loc><changefreq>daily</changefreq></url>`,
+      `<url><loc>${esc(base)}/topics</loc><changefreq>weekly</changefreq></url>`,
+      ...topics.map((t) => `<url><loc>${esc(base)}/topics/${esc(t.slug)}</loc><lastmod>${t.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`),
+      ...notes.flatMap((n) => {
+        const d = normalizeDigest(n.analysis?.data);
+        return d ? [`<url><loc>${esc(base + noteHref(n.id, d.headline))}</loc><lastmod>${n.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`] : [];
+      }),
+    ];
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`;
+  }
 
   @Get('health')
   health() {
@@ -29,7 +65,7 @@ export class PublicController {
       this.workHits(),
       this.prisma.meeting.count(),
     ]);
-    return signupPage(recent, work, archiveCount, formatDate(config.processSince) || 'the last two weeks');
+    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks', await this.topicOptions());
   }
 
   /** Published recaps — the same notes subscribers get by email, after review. Newest first. */
@@ -39,6 +75,82 @@ export class PublicController {
     const query = String(q ?? '').replace(/\s+/g, ' ').trim().slice(0, 120);
     const bodyName = VALID_BODIES.has(String(body ?? '')) ? String(body) : '';
     return notesSearchPage(query, bodyName, await this.publishedHits(query, bodyName, 40));
+  }
+
+  private topicOptions() {
+    return this.prisma.topic.findMany({ where: { status: 'APPROVED' }, select: { slug: true, name: true }, orderBy: { name: 'asc' } });
+  }
+
+  private async normTopics(v: unknown): Promise<string[]> {
+    const wanted = (Array.isArray(v) ? v : v ? [v] : []).map(String);
+    if (!wanted.length) return [];
+    const valid = new Set((await this.topicOptions()).map((t) => t.slug));
+    return [...new Set(wanted.filter((t) => valid.has(t)))];
+  }
+
+  @Get('topics')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async topics() {
+    const topics = await this.prisma.topic.findMany({
+      where: { status: 'APPROVED' },
+      include: { meetings: { include: { meeting: { select: { meetingDate: true } } } } },
+    });
+    const rows = topics.map((t) => {
+      const latest = [...t.meetings].sort((a, b) => (b.meeting.meetingDate?.getTime() ?? 0) - (a.meeting.meetingDate?.getTime() ?? 0))[0];
+      return {
+        slug: t.slug,
+        name: t.name,
+        description: t.description,
+        meetings: t.meetings.length,
+        lastDate: shortDate(latest?.meeting.meetingDate, false),
+        latest: latest?.summary ?? '',
+        sort: latest?.meeting.meetingDate?.getTime() ?? 0,
+      };
+    });
+    return topicsIndexPage(rows.sort((a, b) => b.sort - a.sort));
+  }
+
+  @Get('topics/:slug')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async topic(@Param('slug') slug: string) {
+    const topic = await this.prisma.topic.findUnique({
+      where: { slug },
+      include: {
+        meetings: { include: { meeting: { include: { analysis: { select: { approvedAt: true, data: true } } } } } },
+        deepDives: { where: { status: 'SENT' }, orderBy: { approvedAt: 'desc' }, take: 1 },
+      },
+    });
+    if (!topic || topic.status !== 'APPROVED') {
+      return page('Topic not found', `<h1>That topic isn't here</h1><p><a href="/topics">See every topic</a>.</p>`);
+    }
+    const byId = new Map(topic.meetings.map((l) => [l.meetingId, l.meeting]));
+    const rows = topic.meetings
+      .sort((a, b) => (a.meeting.meetingDate?.getTime() ?? 0) - (b.meeting.meetingDate?.getTime() ?? 0))
+      .map((l) => {
+        const digest = l.meeting.analysis?.approvedAt ? normalizeDigest(l.meeting.analysis.data) : null;
+        return {
+          meetingId: l.meetingId,
+          body: l.meeting.body,
+          date: shortDate(l.meeting.meetingDate, false),
+          summary: l.summary,
+          milestone: l.milestone,
+          why: l.why,
+          href: digest ? noteHref(l.meetingId, digest.headline) : `/meetings/${l.meetingId}`,
+          videoHref: timestampUrl(l.meeting.sourceUrl, l.meeting.platform, l.t),
+        };
+      });
+    const d = topic.deepDives[0];
+    const dive = d
+      ? {
+          article: d.data as unknown as DeepDiveArticle,
+          date: d.approvedAt ?? d.createdAt,
+          videoAt: (meetingId: string, t: number) => {
+            const m = byId.get(meetingId);
+            return m ? timestampUrl(m.sourceUrl, m.platform, t) : `/meetings/${meetingId}`;
+          },
+        }
+      : null;
+    return topicPage(topic, rows, dive, await this.topicOptions());
   }
 
   /** Meetings inside the transcription window, newest first. Includes ones still downloading. */
@@ -55,9 +167,10 @@ export class PublicController {
         id: m.id,
         title: m.title,
         body: m.body,
-        date: formatDate(m.meetingDate),
+        date: shortDate(m.meetingDate),
         status: m.status,
-        detail: m.error || digest?.headline || (m.transcript ? 'Transcript is ready to read' : ''),
+        headline: digest?.headline ?? '',
+        summary: digest?.summary.split(/\n\s*\n/)[0] ?? '',
       };
     });
   }
@@ -94,7 +207,7 @@ export class PublicController {
         id: m.id,
         title: m.title,
         body: m.body,
-        date: formatDate(m.meetingDate),
+        date: shortDate(m.meetingDate),
         headline: digest.headline,
         snippet: snippet(query ? plain : digest.summary, query),
       });
@@ -103,7 +216,8 @@ export class PublicController {
     return hits;
   }
 
-  @Get('notes/:id')
+  /** The slug only makes the URL readable; the id finds the note. */
+  @Get(['notes/:id', 'notes/:id/:slug'])
   @Header('Content-Type', 'text/html; charset=utf-8')
   async note(@Param('id') id: string) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
@@ -121,17 +235,36 @@ export class PublicController {
    */
   @Post('subscribe')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async subscribe(@Body() body: { email?: string; bodies?: string | string[] }, @Res({ passthrough: true }) res: Response) {
+  async subscribe(
+    @Body() body: { email?: string; bodies?: string | string[]; topics?: string | string[]; topicOnly?: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const email = String(body.email ?? '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
       return page('Check your email address', `<h1>That email doesn't look right</h1><p><a href="/">Go back</a> and try again.</p>`);
     }
     const bodies = normBodies(body.bodies);
+    const topics = await this.normTopics(body.topics);
+    const recaps = body.topicOnly !== '1';
     const existing = await this.prisma.subscriber.findUnique({ where: { email } });
+    if (existing?.status === 'CONFIRMED' && topics.length) {
+      // Don't change a confirmed subscriber's mail from a public form; send them their own settings link.
+      const url = `${config.publicBaseUrl}/preferences/${existing.token}`;
+      try {
+        await this.email.send({
+          to: email,
+          subject: `Choose your ${config.newsletterName} topics`,
+          html: `<p>You're already subscribed. Pick the topics you want to follow here:</p><p><a href="${esc(url)}">${esc(url)}</a></p><p style="color:#5b6675;font-size:12px">${esc(config.mailingAddress)}</p>`,
+          text: `You're already subscribed. Pick your topics: ${url}\n\n${config.mailingAddress}`,
+        });
+      } catch (err) {
+        this.log.error(`Preferences email failed: ${(err as Error).message}`);
+      }
+    }
     if (existing?.status !== 'CONFIRMED') {
       const sub = existing
-        ? await this.prisma.subscriber.update({ where: { email }, data: { status: 'PENDING', bodies, token: randomToken() } })
-        : await this.prisma.subscriber.create({ data: { email, bodies, token: randomToken() } });
+        ? await this.prisma.subscriber.update({ where: { email }, data: { status: 'PENDING', bodies, topics, recaps, token: randomToken() } })
+        : await this.prisma.subscriber.create({ data: { email, bodies, topics, recaps, token: randomToken() } });
       try {
         const url = `${config.publicBaseUrl}/confirm/${sub.token}`;
         await this.email.send({
@@ -185,15 +318,23 @@ export class PublicController {
   async prefsForm(@Param('token') token: string) {
     const sub = await this.prisma.subscriber.findUnique({ where: { token } });
     if (!sub) return page('Not found', `<h1>That link didn't work</h1>`);
-    return page('Your meetings', `<h1>Which meetings?</h1><form method="post" action="/preferences/${esc(token)}">${bodyCheckboxes(sub.bodies)}<button type="submit">Save</button></form>`);
+    return page(
+      'Your email',
+      `<h1>What you get</h1><form method="post" action="/preferences/${esc(token)}">
+<label class="check" style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="checkbox" name="recaps" value="1"${sub.recaps ? ' checked' : ''}> A recap after each meeting</label>
+${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicOptions(), sub.topics)}<button type="submit">Save</button></form>`,
+    );
   }
 
   @Post('preferences/:token')
   @HttpCode(200)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async prefsSave(@Param('token') token: string, @Body() body: { bodies?: string | string[] }) {
-    await this.prisma.subscriber.updateMany({ where: { token }, data: { bodies: normBodies(body.bodies) } });
-    return page('Saved', `<h1>Saved</h1><p>Your meeting choices are updated.</p>`);
+  async prefsSave(@Param('token') token: string, @Body() body: { bodies?: string | string[]; topics?: string | string[]; recaps?: string }) {
+    await this.prisma.subscriber.updateMany({
+      where: { token },
+      data: { bodies: normBodies(body.bodies), topics: await this.normTopics(body.topics), recaps: body.recaps === '1' },
+    });
+    return page('Saved', `<h1>Saved</h1><p>Your choices are updated.</p>`);
   }
 }
 

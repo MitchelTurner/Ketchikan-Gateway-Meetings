@@ -64,3 +64,51 @@ export function formatDate(d: Date | null | undefined): string {
   if (!d) return '';
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
+
+/** "Wed, Oct 21, 2026", the one date format used in lists. */
+export function shortDate(d: Date | null | undefined, weekday = true): string {
+  if (!d) return '';
+  return d.toLocaleDateString('en-US', {
+    ...(weekday ? { weekday: 'short' as const } : {}),
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+const DATE_IN_TITLE = new RegExp(
+  [
+    String.raw`\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b`,
+    String.raw`\b\d{1,2}[-./]\d{1,2}[-./]\d{2,4}\b`,
+    String.raw`\b20\d{2}[-./]\d{1,2}[-./]\d{1,2}\b`,
+  ].join('|'),
+  'gi',
+);
+
+/**
+ * What the archive title says beyond the body and the date, as separate items.
+ * "Assembly - Special Meeting to X, followed by Regular Assembly Meeting – Oct 20, 2026"
+ * → ["Special Meeting to X", "Regular Assembly Meeting"]. "School Board – Oct 21, 2026" → [].
+ */
+export function meetingParts(title: string, body: string): string[] {
+  let t = title.replace(DATE_IN_TITLE, ' ');
+  const name = body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  t = t.replace(new RegExp(`^\\s*${name}\\b`, 'i'), ' ');
+  return t
+    .split(/,?\s*\bfollowed by\b\s*|\s+[-–—|:]\s+|^\s*[-–—|:]\s*|\s*[-–—|:]\s*$/i)
+    .map((s) => s.replace(/\s+/g, ' ').replace(/^[\s,–—:|-]+|[\s,–—:|-]+$/g, '').trim())
+    .filter((s) => s && s.toLowerCase() !== body.toLowerCase());
+}
+
+/** "assembly-approves-4m-harbor-bond" for readable, keyword-bearing URLs. */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+[^-]*$/, (m) => (m.length > 20 ? '' : m));
+}

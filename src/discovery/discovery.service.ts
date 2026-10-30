@@ -140,12 +140,33 @@ export class DiscoveryService {
       });
       added++;
       if (!skip) {
-        await this.enqueueProcess(m.id);
+        await this.enqueueProcess(m.id, meetingDate);
         queued++;
       }
     }
-    this.log.log(`Discovery: ${refs.length} videos on page, ${added} new, ${queued} queued`);
-    return { found: refs.length, added, queued };
+    const promoted = await this.promoteSkipped();
+    this.log.log(`Discovery: ${refs.length} videos on page, ${added} new, ${queued} queued, ${promoted} older meetings now in the window`);
+    return { found: refs.length, added, queued: queued + promoted };
+  }
+
+  /**
+   * SKIPPED meetings that PROCESS_SINCE now covers (it was moved back to
+   * backfill) are queued. Their status changes, so this runs once per meeting.
+   */
+  async promoteSkipped(): Promise<number> {
+    const rows = await this.prisma.meeting.findMany({
+      where: { status: 'SKIPPED', meetingDate: { gte: config.processSince } },
+      select: { id: true, meetingDate: true },
+    });
+    let queued = 0;
+    for (const m of rows) {
+      // Boot and the startup discover both call this; only one may claim a meeting.
+      const claimed = await this.prisma.meeting.updateMany({ where: { id: m.id, status: 'SKIPPED' }, data: { status: 'DISCOVERED', error: null } });
+      if (!claimed.count) continue;
+      await this.enqueueProcess(m.id, m.meetingDate);
+      queued++;
+    }
+    return queued;
   }
 
   /**
@@ -161,18 +182,21 @@ export class DiscoveryService {
         status: { in: ['DISCOVERED', 'RESEARCHING', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'FAILED'] },
         OR: [{ transcript: { is: null } }, { analysis: { is: null } }],
       },
-      select: { id: true },
+      select: { id: true, meetingDate: true },
     });
-    for (const m of pending) await this.enqueueProcess(m.id);
+    for (const m of pending) await this.enqueueProcess(m.id, m.meetingDate);
     return pending.length;
   }
 
-  enqueueProcess(meetingId: string) {
+  /** Newer meetings run first, so a backfill never holds up this week's meeting. */
+  enqueueProcess(meetingId: string, meetingDate?: Date | null) {
+    const daysOld = meetingDate ? Math.max(0, Math.floor((Date.now() - meetingDate.getTime()) / 86_400_000)) : 0;
     return this.processQ.add(
       'process',
       { meetingId },
       {
         jobId: `process-${meetingId}-${Date.now()}`,
+        priority: Math.min(1 + daysOld, 2_000_000),
         attempts: 3,
         backoff: { type: 'exponential', delay: 15 * 60_000 },
         removeOnComplete: 200,
