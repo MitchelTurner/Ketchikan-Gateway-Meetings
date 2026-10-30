@@ -15,6 +15,7 @@ import { Q_CONTROL, Q_EMAIL, Q_PROCESS } from './queues';
 import { TranscriptionService } from './transcription/transcription.service';
 import { AdminController } from './web/admin.controller';
 import { PublicController } from './web/public.controller';
+import { StatsService } from './web/stats.service';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { PublicController } from './web/public.controller';
     ProcessProcessor,
     EmailProcessor,
     DiscoveryScheduler,
+    StatsService,
   ],
 })
 export class AppModule {}

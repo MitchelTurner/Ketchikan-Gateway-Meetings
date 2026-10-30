@@ -69,7 +69,24 @@ model Analysis {
   model      String
   data       Json // MeetingDigest
   approvedAt DateTime?
+  hiddenAt   DateTime? // taken off the public site from the admin dashboard
+  editedAt   DateTime? // headline or summary changed by hand; automatic rewrites leave it alone
   createdAt  DateTime  @default(now())
+}
+
+/** One public page load by a person (bots and the signed-in admin are not counted). */
+model PageView {
+  id        String   @id @default(cuid())
+  kind      String // home | notes | note | meeting | topics | topic
+  ref       String? // meeting id or topic slug
+  path      String
+  referrer  String? // host of an outside site that linked here
+  visitor   String // hash of IP and browser with a daily salt: counts people per day without storing either
+  mobile    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([kind, ref])
 }
 
 enum SubscriberStatus {
