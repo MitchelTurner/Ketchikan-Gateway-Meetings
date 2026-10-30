@@ -105,7 +105,7 @@ model Subscriber {
   topics      String[] // Topic slugs for deep-dive emails; empty = none
   recaps      Boolean          @default(true) // false = topic emails only
   confirmedAt DateTime?
-  refCode      String?      @unique // personal invite code in /?r=…; made on confirmation
+  refCode      String? // personal invite code in /?r=…; made on confirmation. Kept unique in code: a new unique constraint stops `db push` on deploy
   referredById String? // the reader whose invite link they signed up through
   referredBy   Subscriber?  @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
   referrals    Subscriber[] @relation("Referrals")
@@ -115,6 +115,7 @@ model Subscriber {
   topicSends  TopicSend[]
 
   @@index([referredById])
+  @@index([refCode])
 }
 
 enum TopicStatus {

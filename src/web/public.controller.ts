@@ -278,7 +278,7 @@ export class PublicController {
     if (existing?.status !== 'CONFIRMED') {
       // Credit goes to a confirmed reader's link, never your own, and the first invite a person used keeps it.
       const code = REF_PATTERN.test(String(body.ref ?? '')) ? String(body.ref) : inviteCode(req);
-      const inviter = code ? await this.prisma.subscriber.findUnique({ where: { refCode: code }, select: { id: true, email: true, confirmedAt: true } }) : null;
+      const inviter = code ? await this.prisma.subscriber.findFirst({ where: { refCode: code }, select: { id: true, email: true, confirmedAt: true } }) : null;
       const referredById = inviter?.confirmedAt && inviter.email !== email ? inviter.id : null;
       const sub = existing
         ? await this.prisma.subscriber.update({

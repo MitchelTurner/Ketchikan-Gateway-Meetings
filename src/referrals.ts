@@ -53,15 +53,13 @@ export function inviteUrl(code: string, path = '/'): string {
 
 export async function ensureRefCode(prisma: PrismaService, sub: { id: string; refCode: string | null }): Promise<string> {
   if (sub.refCode) return sub.refCode;
-  for (let tries = 0; ; tries++) {
-    try {
-      const code = newRefCode();
-      await prisma.subscriber.update({ where: { id: sub.id }, data: { refCode: code } });
-      return code;
-    } catch (err) {
-      if (tries >= 3) throw err;
-    }
+  for (let tries = 0; tries < 5; tries++) {
+    const code = newRefCode();
+    if (await prisma.subscriber.findFirst({ where: { refCode: code }, select: { id: true } })) continue;
+    await prisma.subscriber.update({ where: { id: sub.id }, data: { refCode: code } });
+    return code;
   }
+  throw new Error('Could not pick an unused invite code');
 }
 
 /** Neighbors who confirmed through this reader's link. Leaving later doesn't take a badge back. */
