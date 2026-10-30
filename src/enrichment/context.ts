@@ -6,6 +6,32 @@ import { findLocalNews, leadSentence } from './news';
 
 const log = new Logger('PublishedSources');
 
+/** Schools and places the transcript mishears ("Howling" for Houghtaling). */
+const LOCAL_TERMS = [
+  'Houghtaling Elementary',
+  'Point Higgins Elementary',
+  'Fawn Mountain Elementary',
+  'Tongass School of Arts and Sciences',
+  'Schoenbar Middle School',
+  'Ketchikan High School',
+  'Revilla Junior/Senior High School',
+  'Ketchikan Charter School',
+  'Valley Park',
+  'Saxman',
+  'Gravina',
+  'Revillagigedo',
+  'Ward Cove',
+  'Herring Cove',
+  'Mountain Point',
+  'South Tongass',
+  'North Tongass',
+  'Clover Pass',
+  'Knudson Cove',
+  'Thomas Basin',
+  'Bar Harbor',
+  'Pennock Island',
+];
+
 /** Rosters are today's. Older meetings rely on research, which looks up the members as of the meeting date. */
 const ROSTER_WINDOW_MS = 180 * 24 * 3600_000;
 
@@ -61,6 +87,7 @@ export async function withPublishedSources(
   return {
     ...base,
     people,
+    terms: [...new Set([...base.terms, ...LOCAL_TERMS])],
     articles,
     ...(agenda ? { agendaDoc: { label: agendaLabel, url: agenda.url, text: agenda.text } } : {}),
     ...(current ? { officials: officials(roster).map((p) => p.full) } : {}),
