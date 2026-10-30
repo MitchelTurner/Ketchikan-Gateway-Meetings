@@ -673,10 +673,16 @@ export function pill(status: string): string {
   return `<span class="state ${s.tone}">${esc(s.label)}</span>`;
 }
 
+/** What a resident sees about a meeting's state. "Draft ready" is an editor status, not a public label. */
+function publicPill(status: string): string {
+  if (status === 'AWAITING_APPROVAL') return '';
+  return pill(status);
+}
+
 /** What a resident sees about a meeting's state. Internal errors stay on the admin pages. */
-function publicStatusNote(status: string, hasDigest: boolean, approved: boolean): string {
+function publicStatusNote(status: string): string {
   if (status === 'FAILED') return "Processing stopped before it finished. It's retried automatically.";
-  if (hasDigest && !approved) return "Draft recap. It hasn't been reviewed yet.";
+  if (status === 'AWAITING_APPROVAL') return '';
   if (STATUS[status]?.tone === 'work') return 'This page fills in when transcription finishes.';
   return '';
 }
@@ -711,7 +717,7 @@ export function workList(hits: WorkHit[]): string {
   return `<ul class="docket">${hits
     .map(
       (h) => `<li><a href="/meetings/${esc(h.id)}"><div class="when">${docketDate(h.date)}</div>
-<div><h3>${esc(h.body)}</h3>${partsList(h.title, h.body)}${h.headline ? `<p class="headline">${esc(h.headline)}</p>` : ''}</div>${pill(h.status)}</a></li>`,
+<div><h3>${esc(h.body)}</h3>${partsList(h.title, h.body)}${h.headline ? `<p class="headline">${esc(h.headline)}</p>` : ''}</div>${publicPill(h.status)}</a></li>`,
     )
     .join('')}</ul>`;
 }
@@ -738,10 +744,10 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
     'What the Ketchikan Gateway Borough Assembly, School Board and Planning Commission decided, debated and heard from residents, written in plain language and linked to the meeting video.';
 
   const leadHtml = lead
-    ? `<article class="lead"><div class="kicker">${lead.draft ? 'Draft · ' : ''}${esc(lead.body)}</div>
+    ? `<article class="lead"><div class="kicker">${esc(lead.body)}</div>
 <h2><a href="${esc(lead.href)}">${esc(lead.headline)}</a></h2>
 <p class="dek">${lead.dek}</p>
-<p class="meta">${esc(lead.date)}${lead.draft ? ' · Not yet reviewed' : ''}</p>
+<p class="meta">${esc(lead.date)}</p>
 <a class="more" href="${esc(lead.href)}">Read the recap →</a></article>`
     : `<article class="lead"><p class="empty">The first recap appears here as soon as a meeting has been transcribed.</p></article>`;
 
@@ -861,8 +867,9 @@ export function meetingPage(
   approved: boolean,
   segments: { start?: number; speaker?: string; text?: string }[],
 ): string {
-  const note = publicStatusNote(meeting.status, Boolean(digest), approved);
-  const banner = `<div class="status-line">${pill(meeting.status)}${note ? `<p class="muted">${esc(note)}</p>` : ''}</div>`;
+  const note = publicStatusNote(meeting.status);
+  const label = publicPill(meeting.status);
+  const banner = label || note ? `<div class="status-line">${label}${note ? `<p class="muted">${esc(note)}</p>` : ''}</div>` : '';
   const transcript = transcriptHtml(segments);
   // A reviewed recap has its own canonical page; drafts stay out of search.
   if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, draft: !approved });
