@@ -7,10 +7,14 @@ export interface NewsArticle {
 }
 
 /**
- * KRBD's public feed. The Daily News blocks automated requests, so a miss here
- * just means the recap stays on the transcript.
+ * KRBD's search feed and the Borough's news releases. The Ketchikan Daily News
+ * and Alaska Beacon refuse automated requests, and Alaska Public Media has no
+ * search feed, so they are left out. A miss here just means less context.
  */
-const SEARCH = 'https://www.krbd.org/';
+const KRBD = 'https://www.krbd.org/';
+const BOROUGH_NEWS = 'https://www.kgbak.us/RSSFeed.aspx?ModID=1&CID=All-newsflash.xml';
+
+const DAY = 24 * 3600_000;
 
 export async function findLocalNews(opts: {
   body: string;
@@ -19,27 +23,77 @@ export async function findLocalNews(opts: {
   userAgent: string;
 }): Promise<NewsArticle[]> {
   if (!opts.meetingDate) return [];
-  const month = opts.meetingDate.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
-  const year = opts.meetingDate.getUTCFullYear();
-  const queries = [`${opts.body} ${month} ${year}`, `Ketchikan ${opts.body} ${year}`];
+  const meeting = opts.meetingDate;
+  const month = meeting.toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+  const year = meeting.getUTCFullYear();
+  const found = await collect(
+    [
+      { url: krbdSearch(`${opts.body} ${month} ${year}`), outlet: 'KRBD' },
+      { url: krbdSearch(`Ketchikan ${opts.body} ${year}`), outlet: 'KRBD' },
+      { url: BOROUGH_NEWS, outlet: 'Ketchikan Gateway Borough' },
+    ],
+    opts.userAgent,
+  );
+  return found
+    .filter((a) => between(a.published, meeting.getTime() - 2 * DAY, meeting.getTime() + 18 * DAY) && aboutBody(a, opts.body))
+    .sort((a, b) => distance(a.published, meeting) - distance(b.published, meeting))
+    .slice(0, 4);
+}
+
+export interface Background {
+  topic: string;
+  articles: NewsArticle[];
+}
+
+/**
+ * Earlier KRBD stories on each subject, for readers who want the history. A
+ * story counts only if the subject phrase is in its title or text: KRBD's
+ * search returns loosely related stories too.
+ */
+export async function findBackground(opts: {
+  topics: string[];
+  meetingDate: Date | null;
+  exclude: Set<string>;
+  userAgent: string;
+  perTopic?: number;
+}): Promise<Background[]> {
+  if (!opts.meetingDate) return [];
+  const end = opts.meetingDate.getTime() + 18 * DAY;
+  const start = opts.meetingDate.getTime() - 2 * 365 * DAY;
+  const used = new Set(opts.exclude);
+  const out: Background[] = [];
+  for (const topic of opts.topics.slice(0, 5)) {
+    const phrase = topic.toLowerCase();
+    const found = await collect([{ url: krbdSearch(topic), outlet: 'KRBD' }], opts.userAgent);
+    const articles = found
+      .filter((a) => !used.has(a.url) && between(a.published, start, end))
+      .filter((a) => `${a.title} ${a.excerpt}`.toLowerCase().includes(phrase))
+      .sort((a, b) => (b.published?.getTime() ?? 0) - (a.published?.getTime() ?? 0))
+      .slice(0, opts.perTopic ?? 2);
+    articles.forEach((a) => used.add(a.url));
+    if (articles.length) out.push({ topic, articles });
+  }
+  return out;
+}
+
+function krbdSearch(q: string): string {
+  return `${KRBD}?s=${encodeURIComponent(q)}&feed=rss2`;
+}
+
+async function collect(feeds: { url: string; outlet: string }[], userAgent: string): Promise<NewsArticle[]> {
   const found = new Map<string, NewsArticle>();
   await Promise.all(
-    queries.map(async (q) => {
+    feeds.map(async ({ url, outlet }) => {
       try {
-        const url = `${SEARCH}?s=${encodeURIComponent(q)}&feed=rss2`;
-        const xml = await getText(url, opts.userAgent);
-        for (const article of parseRss(xml)) {
+        for (const article of parseRss(await getText(url, userAgent), outlet)) {
           if (!found.has(article.url)) found.set(article.url, article);
         }
       } catch {
-        /* one failed search should not block the recap */
+        /* one failed feed should not block the recap */
       }
     }),
   );
-  return [...found.values()]
-    .filter((a) => inWindow(a.published, opts.meetingDate!) && aboutBody(a, opts.body))
-    .sort((a, b) => distance(a.published, opts.meetingDate!) - distance(b.published, opts.meetingDate!))
-    .slice(0, 4);
+  return [...found.values()];
 }
 
 export function leadSentence(excerpt: string): string {
@@ -57,11 +111,10 @@ function aboutBody(article: NewsArticle, body: string): boolean {
   return keys.some((k) => hay.includes(k));
 }
 
-function inWindow(published: Date | null, meeting: Date): boolean {
+function between(published: Date | null, start: number, end: number): boolean {
   if (!published || Number.isNaN(published.getTime())) return false;
-  const day = 24 * 3600_000;
   const t = published.getTime();
-  return t >= meeting.getTime() - 2 * day && t <= meeting.getTime() + 18 * day;
+  return t >= start && t <= end;
 }
 
 function distance(published: Date | null, meeting: Date): number {
@@ -69,18 +122,18 @@ function distance(published: Date | null, meeting: Date): number {
   return Math.abs(published.getTime() - meeting.getTime());
 }
 
-function parseRss(xml: string): NewsArticle[] {
+function parseRss(xml: string, outlet: string): NewsArticle[] {
   return xml
     .split(/<item\b/i)
     .slice(1)
     .map((chunk) => {
-      const title = textOf(chunk, 'title');
+      const title = plain(textOf(chunk, 'title'));
       const url = textOf(chunk, 'link');
       const pub = textOf(chunk, 'pubDate');
       const body = textOf(chunk, 'content:encoded') || textOf(chunk, 'description');
       const published = pub ? new Date(pub) : null;
       return {
-        outlet: 'KRBD',
+        outlet,
         title,
         url,
         published: published && !Number.isNaN(published.getTime()) ? published : null,
@@ -105,12 +158,15 @@ function decode(s: string): string {
   return s
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ');
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;(#\d+|#x[0-9a-f]+);/gi, (_, n: string) =>
+      String.fromCharCode(n[1] === 'x' || n[1] === 'X' ? parseInt(n.slice(2), 16) : Number(n.slice(1))),
+    )
+    .replace(/&amp;/g, '&');
 }
 
 async function getText(url: string, userAgent: string): Promise<string> {
