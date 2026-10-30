@@ -279,13 +279,13 @@ function seoTags(title: string, seo: Seo): string {
 }
 
 /** Full document: masthead, the page's own main element, footer. */
-function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo } = {}): string {
+function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo; css?: string } = {}): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><title>${esc(title)}</title>
 ${seoTags(title, opts.seo ?? {})}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${FONTS}">
-<style>${CSS}</style></head><body>
+<style>${CSS}${opts.css ?? ''}</style></head><body>
 ${masthead(opts.compact ?? true)}
 ${main}
 <footer class="site">${treeline()}<div class="sign">${esc(config.newsletterName)}</div>An independent public service from Ketchikan. Not an official Ketchikan Gateway Borough publication.<br>Recaps are written with AI from the Borough's own recordings and reviewed before they're published. <a href="/notes">Read every recap</a>.</footer>
@@ -298,6 +298,92 @@ export function page(title: string, inner: string, wide = false, below = ''): st
     `${title} · ${config.newsletterName}`,
     `<main class="wrap" style="max-width:${wide ? '760px' : '560px'}"><div class="sheet">${inner}</div>${below}</main>`,
     { seo: { noindex: true } },
+  );
+}
+
+const ADMIN_CSS = `
+.adminbar{border-bottom:1px solid var(--rule);background:var(--wash)}
+.adminbar .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:4px 26px;font:600 11.5px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase}
+.adminbar a{text-decoration:none;color:var(--ink-2);padding:14px 0 12px;border-bottom:2px solid transparent}
+.adminbar a:hover{color:var(--accent)}
+.adminbar a.on{color:var(--accent);border-bottom-color:var(--accent)}
+.adminbar .label{font:400 16px/1 var(--display);letter-spacing:.02em;text-transform:none;color:var(--accent);margin-right:6px}
+.adminbar .right{margin-left:auto;display:flex;gap:22px}
+.admin{padding-top:34px;padding-bottom:20px}
+.admin h1{font-size:clamp(30px,4vw,44px);margin-bottom:6px}
+.admin .lede{font:italic 400 17px/1.5 var(--serif);color:var(--ink-2);margin:0 0 26px}
+.admin h2.section{font:600 11.5px/1.3 var(--sans);letter-spacing:.14em;text-transform:uppercase;border-top:1px solid var(--rule-strong);padding-top:10px;margin:38px 0 14px;display:flex;justify-content:space-between;gap:12px}
+.admin h2.section a{color:var(--accent);text-decoration:none;letter-spacing:.1em}
+.cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border-top:1px solid var(--ink);border-bottom:1px solid var(--rule);margin:6px 0 10px}
+.card{padding:16px 18px;border-left:1px solid var(--rule)}
+.card:first-child{border-left:0;padding-left:0}
+.card .l{font:600 10.5px/1.4 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.card .n{font:400 38px/1 var(--head);font-variant-numeric:lining-nums}
+.card .d{font:500 12.5px/1.4 var(--sans);color:var(--muted);margin-top:8px}
+.card .d.up{color:var(--spruce)}.card .d.down{color:var(--accent)}
+.chart{margin:18px 0 0}
+.chart svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:18px;font:500 12px/1 var(--sans);color:var(--muted);margin:10px 0 0}
+.legend i{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:52px}
+table.data{width:100%;border-collapse:collapse;font:400 14.5px/1.45 var(--sans)}
+table.data th{text-align:left;font:600 10.5px/1.3 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--ink);padding:0 12px 8px 0}
+table.data td{border-bottom:1px solid var(--rule);padding:11px 12px 11px 0;vertical-align:top}
+table.data .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;padding-right:0}
+table.data a{text-decoration:none}table.data a:hover{color:var(--accent)}
+table.data .sub{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+table.data .headline{font:400 17px/1.3 var(--head)}
+.meter{display:block;height:3px;background:var(--wash);margin-top:6px}.meter span{display:block;height:3px;background:var(--tide)}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+.tabs a{font:500 13px/1 var(--sans);text-decoration:none;border:1px solid var(--rule);border-radius:999px;padding:8px 13px;background:#fff}
+.tabs a.on{background:var(--spruce);border-color:var(--spruce);color:#fff}
+.tabs a b{font-weight:700;margin-left:4px}
+.toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;justify-content:space-between;margin:0 0 6px}
+.toolbar form{display:flex;gap:10px;align-items:end;flex:1;min-width:240px;max-width:460px}
+.toolbar input{padding:10px 2px}
+.btn,button.btn{display:inline-block;width:auto;margin:0;padding:11px 16px;font:600 11px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;text-decoration:none;color:#fff;background:var(--ink);border:1px solid var(--ink);cursor:pointer}
+.btn:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.ghost{background:transparent;color:var(--ink)}.btn.ghost:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
+.btn.warn{background:transparent;color:var(--accent);border-color:var(--accent)}.btn.warn:hover{background:var(--accent);color:#fff}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.actions form{margin:0}
+input[type=text],input[type=password],textarea{width:100%;padding:12px 14px;font:16px/1.4 var(--sans);border:1px solid var(--rule);border-radius:0;background:#fff;color:inherit}
+input[type=text]:focus,input[type=password]:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+textarea{min-height:340px;font:16.5px/1.65 var(--serif);resize:vertical}
+input.headline{font:400 24px/1.25 var(--head)}
+.panel{border:1px solid var(--rule);background:#fff;padding:18px 20px 16px;margin:0 0 18px}
+.panel h3{font:600 10.5px/1.3 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+.panel p,.panel li{font:400 14px/1.55 var(--sans);color:var(--ink-2)}
+.panel ul{margin:0;padding-left:18px}
+.panel .big{font:400 34px/1 var(--head);color:var(--ink);margin:0 0 4px}
+.panel form+form{margin-top:10px}
+.flash{border-left:3px solid var(--spruce);background:#fff;padding:12px 16px;font:500 14px/1.5 var(--sans);margin:0 0 24px}
+.flash.bad{border-left-color:var(--accent)}
+.editor{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);gap:44px;align-items:start}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;justify-content:space-between;gap:14px;border-bottom:1px solid var(--rule);padding:11px 0;font:400 14.5px/1.45 var(--sans)}
+.list li a{text-decoration:none}.list li a:hover{color:var(--accent)}
+.list .n{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.status-grid{display:flex;flex-wrap:wrap;gap:8px 22px;margin:0 0 14px}
+@media (max-width:860px){.cols,.editor{grid-template-columns:minmax(0,1fr);gap:28px}.adminbar .right{margin-left:0}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}.card{border-left:0;border-top:1px solid var(--rule);padding:14px 12px 14px 0}.card:nth-child(-n+2){border-top:0}.card:nth-child(even){border-left:1px solid var(--rule);padding-left:14px}}
+@media (max-width:640px){table.data .hide-sm{display:none}}
+`;
+
+export type AdminTab = 'overview' | 'posts' | 'meetings' | 'topics' | '';
+
+/** Signed-in screens: a working bar under a compact nameplate, full width. Not indexed. */
+export function adminPage(title: string, tab: AdminTab, inner: string, signedIn = true): string {
+  const link = (href: string, label: string, key: AdminTab) => `<a href="${href}"${key && key === tab ? ' class="on" aria-current="page"' : ''}>${label}</a>`;
+  const links = signedIn
+    ? `${link('/admin', 'Overview', 'overview')}${link('/admin/posts', 'Posts', 'posts')}${link('/admin/meetings', 'Meetings', 'meetings')}${link('/admin/topics', 'Topics', 'topics')}<span class="right"><a href="/">View site</a><a href="/admin/logout">Sign out</a></span>`
+    : '<span class="right"><a href="/">View site</a></span>';
+  return shell(
+    `${title} · Admin · ${config.newsletterName}`,
+    `<nav class="adminbar" aria-label="Admin"><div class="wrap"><span class="label">Editor's desk</span>${links}</div></nav>
+<main class="wrap admin">${inner}</main>`,
+    { seo: { noindex: true }, css: ADMIN_CSS },
   );
 }
 
@@ -339,17 +425,18 @@ export function adminMeetingsPage(rows: AdminMeetingRow[]): string {
         .map((m) => {
           const links = [
             m.hasTranscript ? `<a href="/admin/meetings/${esc(m.id)}/transcript">Transcript</a>` : '',
-            m.hasAnalysis ? `<a href="/admin/meetings/${esc(m.id)}/preview">Recap</a>` : '',
+            m.hasAnalysis ? `<a href="/admin/posts/${esc(m.id)}">Edit post</a>` : '',
+            m.hasAnalysis ? `<a href="/admin/meetings/${esc(m.id)}/preview">Email preview</a>` : '',
             m.approveHref ? `<a href="${esc(m.approveHref)}">Approve</a>` : '',
           ].filter(Boolean);
           return `<div class="hit"><div class="kicker">${esc(m.body)}${m.date ? ` · ${esc(m.date)}` : ''} · ${esc(m.status)}</div><h2>${esc(m.title)}</h2>${m.error ? `<p>${esc(m.error)}</p>` : ''}${links.length ? `<p>${links.join(' · ')}</p>` : ''}</div>`;
         })
         .join('')}</div>`
     : '<p class="muted">No meetings yet. Discovery adds them from the archive.</p>';
-  return page(
+  return adminPage(
     'Meetings',
-    `<h1>Meetings</h1><p>A transcript link means that meeting has been transcribed. Email can wait until Resend is connected.</p>${list}`,
-    true,
+    'meetings',
+    `<h1>Meetings</h1><p class="lede">Everything found in the Borough's video archive, newest first. A transcript link means that meeting has been transcribed.</p>${list}`,
   );
 }
 
@@ -364,13 +451,13 @@ export function adminTranscriptPage(
       return `<p><span class="kicker">${who}${hms(Number(s.start) || 0)}</span><br>${esc(s.text)}</p>`;
     })
     .join('');
-  return page(
+  return adminPage(
     meeting.title,
+    'meetings',
     `<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''} · ${esc(provider)} · ${segments.length} lines</div>
 <h1>${esc(meeting.title)}</h1>
 <p><a href="/admin/meetings">All meetings</a></p>
 ${lines || '<p class="muted">This transcript is empty.</p>'}`,
-    true,
   );
 }
 
@@ -428,7 +515,7 @@ const STATUS: Record<string, { label: string; tone: 'work' | 'ready' | 'done' | 
   SKIPPED: { label: 'Not transcribed', tone: 'done' },
 };
 
-function pill(status: string): string {
+export function pill(status: string): string {
   const s = STATUS[status] ?? { label: status, tone: 'done' as const };
   return `<span class="state ${s.tone}">${esc(s.label)}</span>`;
 }
@@ -865,14 +952,14 @@ export function adminTopicsPage(rows: AdminTopicRow[]): string {
 ${t.dives.length ? `<ul class="parts" style="margin-top:10px">${t.dives.map((d) => `<li>${esc(d.status)} · ${esc(d.headline)} · <a href="${esc(d.previewHref)}">Preview</a>${d.status === 'DRAFT' ? ` · <a href="${esc(d.approveHref)}">Approve and send</a>` : ''}</li>`).join('')}</ul>` : ''}</div>`;
   const suggested = rows.filter((r) => r.status === 'SUGGESTED');
   const approved = rows.filter((r) => r.status === 'APPROVED');
-  return page(
+  return adminPage(
     'Topics',
+    'topics',
     `<h1>Topics</h1>
-<p>Claude suggests issues as it reads each recap; the ones raised at the most meetings are at the top. Approved topics get a public page, a signup option, and a deep dive drafted automatically after each key moment.</p>
+<p class="lede">Claude suggests issues as it reads each recap; the ones raised at the most meetings are at the top. Approved topics get a public page, a signup option, and a deep dive drafted automatically after each key moment.</p>
 <p>${btn('/admin/topics/scan', 'Tag older recaps now')}</p>
 <h2 class="section">Suggested (${suggested.length})</h2>${suggested.length ? `<div class="hits">${suggested.map(card).join('')}</div>` : '<p class="muted">No suggestions waiting.</p>'}
 <h2 class="section">Approved (${approved.length})</h2>${approved.length ? `<div class="hits">${approved.map(card).join('')}</div>` : '<p class="muted">None yet.</p>'}
-<p><a href="/admin/meetings">Meetings</a></p>`,
-    true,
+`,
   );
 }

@@ -51,7 +51,7 @@ export class PipelineService {
 
     try {
       // A refresh rewrites an unsent draft with the current sources; a sent recap stays as mailed.
-      const redo = !!opts.refreshRecap && !!meeting.analysis && !meeting.analysis.approvedAt;
+      const redo = !!opts.refreshRecap && !!meeting.analysis && !meeting.analysis.approvedAt && !meeting.analysis.editedAt;
       let context = meeting.research ? normalizeContext(meeting.research.data) : null;
       if (!context && (!meeting.analysis || redo) && config.researchEnabled) context = await this.runResearch(meeting);
       if (!meeting.transcript || !meeting.analysis || redo) {
@@ -204,6 +204,12 @@ export class PipelineService {
       return;
     }
     await this.controlQ.add('deliver', { meetingId }, { jobId: `deliver-${meetingId}`, removeOnComplete: 200 });
+  }
+
+  /** Approves a recap for the website without emailing anyone, whatever its date. */
+  async publishOnly(meetingId: string) {
+    await this.prisma.analysis.update({ where: { meetingId }, data: { approvedAt: new Date() } });
+    await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'PUBLISHED', error: null } });
   }
 
   /** Approves every drafted backfill recap at once. */

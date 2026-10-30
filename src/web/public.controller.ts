@@ -24,7 +24,7 @@ export class PublicController {
   @Header('Content-Type', 'text/plain; charset=utf-8')
   robots() {
     const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
-    return `User-agent: *\nDisallow: /admin/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
+    return `User-agent: *\nDisallow: /admin\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
   }
 
   /** Every reviewed recap, so search engines find them without crawling the search page. */
@@ -33,7 +33,7 @@ export class PublicController {
   async sitemap() {
     const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
     const notes = await this.prisma.meeting.findMany({
-      where: { analysis: { is: { approvedAt: { not: null } } } },
+      where: { analysis: { is: { approvedAt: { not: null }, hiddenAt: null } } },
       select: { id: true, updatedAt: true, analysis: { select: { data: true } } },
       orderBy: { meetingDate: 'desc' },
       take: 5000,
@@ -116,7 +116,7 @@ export class PublicController {
     const topic = await this.prisma.topic.findUnique({
       where: { slug },
       include: {
-        meetings: { include: { meeting: { include: { analysis: { select: { approvedAt: true, data: true } } } } } },
+        meetings: { include: { meeting: { include: { analysis: { select: { approvedAt: true, hiddenAt: true, data: true } } } } } },
         deepDives: { where: { status: 'SENT' }, orderBy: { approvedAt: 'desc' }, take: 1 },
       },
     });
@@ -125,6 +125,7 @@ export class PublicController {
     }
     const byId = new Map(topic.meetings.map((l) => [l.meetingId, l.meeting]));
     const rows = topic.meetings
+      .filter((l) => !l.meeting.analysis?.hiddenAt)
       .sort((a, b) => (a.meeting.meetingDate?.getTime() ?? 0) - (b.meeting.meetingDate?.getTime() ?? 0))
       .map((l) => {
         const digest = l.meeting.analysis?.approvedAt ? normalizeDigest(l.meeting.analysis.data) : null;
@@ -156,7 +157,7 @@ export class PublicController {
   /** Meetings inside the transcription window, newest first. Includes ones still downloading. */
   private async workHits(): Promise<WorkHit[]> {
     const meetings = await this.prisma.meeting.findMany({
-      where: { status: { not: 'SKIPPED' } },
+      where: { status: { not: 'SKIPPED' }, NOT: { analysis: { is: { hiddenAt: { not: null } } } } },
       include: { transcript: { select: { id: true } }, analysis: true },
       orderBy: [{ meetingDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
       take: 20,
@@ -179,7 +180,7 @@ export class PublicController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   async meeting(@Param('id') id: string) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { transcript: true, analysis: true } });
-    if (!m) return page('Not found', `<h1>That meeting isn't here</h1><p><a href="/">Back home</a></p>`);
+    if (!m || m.analysis?.hiddenAt) return page('Not found', `<h1>That meeting isn't here</h1><p><a href="/">Back home</a></p>`);
     const segments = Array.isArray(m.transcript?.segments)
       ? (m.transcript.segments as { start?: number; speaker?: string; text?: string }[])
       : [];
@@ -190,7 +191,7 @@ export class PublicController {
   private async publishedHits(query: string, bodyName: string, limit: number): Promise<NoteHit[]> {
     const meetings = await this.prisma.meeting.findMany({
       where: {
-        analysis: { is: { approvedAt: { not: null } } },
+        analysis: { is: { approvedAt: { not: null }, hiddenAt: null } },
         ...(bodyName ? { body: bodyName } : {}),
       },
       include: { analysis: true },
@@ -221,7 +222,7 @@ export class PublicController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   async note(@Param('id') id: string) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
-    const digest = m?.analysis?.approvedAt ? normalizeDigest(m.analysis.data) : null;
+    const digest = m?.analysis?.approvedAt && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
     if (!m || !digest) {
       return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here after they've been reviewed and emailed. <a href="/notes">Back to search</a>.</p>`);
     }

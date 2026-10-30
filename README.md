@@ -76,6 +76,15 @@ Each recap lists the rosters and agenda its names were checked against, on the p
 
 `KNOWN_NAMES="Jane Doe — Borough Clerk; …"` pins spellings the web gets wrong. Research failing never stops a meeting; it carries on without it and tries again next run. Coverage often appears days later: `POST /admin/meetings/:id/process?reanalyze=true` redoes the research and the recap (the transcript is reused). Set `RESEARCH_ENABLED=false` to turn it off.
 
+## Admin dashboard
+
+Open `/admin` and sign in with `ADMIN_TOKEN` (the browser stays signed in for 30 days; `/admin/logout` signs out).
+
+- **Overview** (`/admin`): visits and page views for the last 30 days by Alaska day, compared with the 30 days before; the most-read pages; the sites readers came from; subscribers; pipeline status; and what's waiting on you.
+- **Posts** (`/admin/posts`): every recap, filtered by draft, published or hidden, with all-time views. Open one to edit the headline and summary, publish it on the site (with or without email), hide it from every public page, or rewrite it with Claude. Hand-edited drafts are skipped by automatic rewrites.
+
+Page views are counted on the server, without cookies or third-party scripts: the IP address and browser are hashed with a salt that changes daily, so a "visit" is one person on one day and neither is stored. Bots, link previews and your own signed-in visits are left out.
+
 ## Admin endpoints (Bearer `ADMIN_TOKEN`)
 - `GET /admin/inspect` — what's on the archive page
 - `POST /admin/discover` — check the archive now

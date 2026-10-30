@@ -1,5 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { esc } from '../util';
 import { page } from './page';
 
 /**
@@ -25,6 +26,8 @@ export class HtmlExceptionFilter implements ExceptionFilter {
       const copy =
         status === 404
           ? { title: 'Not found', inner: `<h1>Not found</h1><p><a href="/">Back home</a></p>` }
+          : status === 400 && exception instanceof HttpException
+            ? { title: 'Check that', inner: `<h1>Check that</h1><p>${esc(exception.message)}</p><p><a href="javascript:history.back()">Go back</a></p>` }
           : status === 403
             ? { title: "That link didn't work", inner: `<h1>That link didn't work</h1><p>Open the link from the email again.</p>` }
             : {
@@ -46,5 +49,6 @@ function wantsHtml(req: Request): boolean {
   const path = req.path || String(req.url || '').split('?')[0];
   if (path === '/' || path === '/subscribe' || path === '/notes' || path.startsWith('/notes/') || path.startsWith('/topics')) return true;
   if (path.startsWith('/confirm/') || path.startsWith('/unsubscribe/') || path.startsWith('/preferences/')) return true;
+  if (path === '/admin' || path.startsWith('/admin/posts') || path.startsWith('/admin/log')) return true;
   return /\/admin\/(meetings|dives)\/[^/]+\/(approve|preview|reject)$/.test(path) || /\/admin\/topics/.test(path);
 }

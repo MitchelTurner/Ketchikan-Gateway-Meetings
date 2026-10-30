@@ -199,7 +199,7 @@ export class DiscoveryService {
         status: { in: ['AWAITING_APPROVAL', 'FAILED'] },
         meetingDate: { gte: config.emailSince },
         transcript: { isNot: null },
-        analysis: { is: { approvedAt: null } },
+        analysis: { is: { approvedAt: null, editedAt: null } },
       },
       select: { id: true, meetingDate: true, analysis: { select: { data: true } } },
     });
