@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
+import { REF_PATTERN, SHARE_CHANNELS } from '../referrals';
 
 const BOTS =
   /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|curl|wget|python|httpx|axios|node-fetch|undici|go-http|java\/|okhttp|headless|lighthouse|monitor|uptime|pingdom|scan|fetch|feed|rss/i;
@@ -74,6 +75,11 @@ export class StatsService {
   /** Express middleware. Records after the response, so a slow insert never delays a page. */
   middleware() {
     return (req: Request, res: Response, next: NextFunction) => {
+      const r = typeof req.query.r === 'string' ? req.query.r : '';
+      if (req.method === 'GET' && REF_PATTERN.test(r) && !req.path.startsWith('/admin')) {
+        // Remembered so a reader who browses a few recaps before signing up still credits the neighbor who invited them.
+        res.append('Set-Cookie', `kgb_ref=${r}; Path=/; SameSite=Lax; Max-Age=${30 * 24 * 3600}`);
+      }
       if (req.method === 'GET') {
         res.on('finish', () => {
           if (res.statusCode !== 200 || !String(res.getHeader('content-type') ?? '').includes('text/html')) return;
@@ -107,6 +113,7 @@ export class StatsService {
         referrer: outsideHost(req),
         visitor,
         mobile: /Mobi|Android|iPhone|iPad/i.test(ua),
+        via: viaOf(req),
       },
     });
   }
@@ -149,6 +156,13 @@ export class StatsService {
     return r?.total ? r.mobile / r.total : 0;
   }
 
+  async shareVisits(since: Date): Promise<{ via: string; views: number; visits: number }[]> {
+    return this.prisma.$queryRaw<{ via: string; views: number; visits: number }[]>`
+      SELECT via, count(*)::int AS views, count(DISTINCT visitor)::int AS visits
+      FROM "PageView" WHERE "createdAt" >= ${since} AND via IS NOT NULL
+      GROUP BY via ORDER BY views DESC`;
+  }
+
   /** All-time views for each meeting's recap and draft pages. */
   async postViews(meetingIds: string[]): Promise<Map<string, number>> {
     if (!meetingIds.length) return new Map();
@@ -159,6 +173,12 @@ export class StatsService {
     });
     return new Map(rows.map((r) => [r.ref ?? '', r._count._all]));
   }
+}
+
+function viaOf(req: Request): string | null {
+  if (typeof req.query.r === 'string' && REF_PATTERN.test(req.query.r)) return 'invite';
+  const via = typeof req.query.via === 'string' ? req.query.via : '';
+  return (SHARE_CHANNELS as readonly string[]).includes(via) ? via : null;
 }
 
 function outsideHost(req: Request): string | null {

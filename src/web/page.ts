@@ -2,6 +2,7 @@ import { config } from '../config';
 import { sourceLabel, timestampUrl } from '../email/render';
 import { MeetingDigest } from '../analysis/analysis.service';
 import type { DeepDiveArticle } from '../topics/deep-dive.service';
+import { BOROUGH_POPULATION, FOUNDING_READERS } from '../referrals';
 import { BODIES, esc, formatDate, hms, meetingParts, shortDate, slugify } from '../util';
 
 export { slugify };
@@ -162,6 +163,48 @@ button:hover{background:var(--accent)}
 .search{display:grid;grid-template-columns:minmax(0,1fr) 200px auto;gap:12px;align-items:end;margin:8px 0 8px}
 .search label{margin:0 0 6px}.search button{margin:0;width:auto;padding:14px 24px}
 
+/* Sharing, invites and the community goal */
+.share{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center}
+.share a,.share button{display:inline-flex;align-items:center;width:auto;margin:0;padding:10px 14px;font:600 11px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase;text-decoration:none;color:var(--ink);background:transparent;border:1px solid var(--ink);border-radius:0;cursor:pointer}
+.share a:hover,.share button:hover{background:var(--ink);color:#fff}
+.share [hidden]{display:none}
+.share .primary{background:var(--ink);color:#fff}.share .primary:hover{background:var(--accent);border-color:var(--accent)}
+.share-head{font:600 11px/1.3 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);text-align:center;margin:40px 0 12px}
+.goal{margin:20px 0 0}
+.goal .bar{height:8px;background:var(--wash);border:1px solid var(--rule)}
+.goal .bar span{display:block;height:100%;min-width:3px;background:var(--spruce)}
+.goal p{font:500 12.5px/1.5 var(--sans);color:var(--muted);margin:7px 0 0;text-align:center}
+.goal p b{color:var(--ink)}
+.invited{font:italic 400 16px/1.4 var(--serif);color:var(--accent);text-align:center;margin:0 0 12px}
+.callout{margin:52px 0 0;border:1px solid var(--ink);padding:28px 28px 24px;text-align:center}
+.callout h2{font:400 28px/1.15 var(--display);margin:0 0 6px}
+.callout > p{font:italic 400 16px/1.5 var(--serif);color:var(--ink-2);margin:0}
+.callout form{display:flex;gap:10px;max-width:480px;margin:16px auto 0;align-items:end}
+.callout input[type=email]{flex:1}
+.callout button{width:auto;margin:0;padding:14px 20px}
+.kit{border-top:1px solid var(--ink);margin:34px 0 0;padding-top:22px}
+.kit h2{font:400 26px/1.15 var(--display);color:var(--ink);margin:0 0 6px}
+.linkbox{display:flex;gap:8px;margin:16px 0 12px}
+.linkbox input{flex:1;min-width:0;font:15px/1.3 var(--sans);padding:11px 12px;border:1px solid var(--rule);background:#fff;color:var(--ink)}
+.linkbox button{width:auto;margin:0;padding:11px 16px}
+.kit .share{justify-content:flex-start}
+.score{display:flex;gap:18px;align-items:center;margin:22px 0 4px;font:500 14px/1.45 var(--sans);color:var(--ink-2)}
+.score strong{font:400 46px/1 var(--head);color:var(--ink)}
+.badges{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:0;margin:16px 0 0}
+.badge{border:1px solid var(--rule);background:#fff;padding:14px 10px 12px;text-align:center;font:500 11.5px/1.35 var(--sans);color:var(--muted)}
+.badge svg{display:block;width:38px;height:38px;margin:0 auto 8px}
+.badge b{display:block;font:400 15.5px/1.2 var(--display);color:var(--muted);margin:0 0 4px}
+.badge.on{border-color:var(--spruce)}.badge.on b{color:var(--spruce)}
+.badge.founding.on{border-color:var(--accent)}.badge.founding.on b{color:var(--accent)}
+.reader-no{text-align:center;margin:8px 0 18px}
+.reader-no span{display:block;font:600 11px/1.3 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.reader-no strong{display:block;font:400 76px/1 var(--display);color:var(--accent);margin:6px 0 4px}
+.steps{list-style:none;padding:0;margin:22px 0;display:grid;gap:10px}
+.steps li{display:flex;gap:12px;align-items:baseline;font:500 15px/1.45 var(--sans);color:var(--muted)}
+.steps li::before{content:attr(data-n);flex:0 0 26px;height:26px;border:1px solid currentColor;border-radius:50%;font:600 12px/24px var(--sans);text-align:center}
+.steps li.done{color:var(--spruce)}.steps li.done::before{content:"✓";background:var(--spruce);border-color:var(--spruce);color:#fff}
+.steps li.now{color:var(--ink)}.steps li.now::before{border-color:var(--accent);color:var(--accent)}
+
 footer.site{margin-top:40px;padding:0 24px 44px;font:400 13px/1.7 var(--sans);color:var(--muted);text-align:center}
 footer.site .treeline{display:block;width:100%;max-width:1120px;height:auto;margin:0 auto 18px;color:var(--spruce)}
 footer.site .sign{font:400 22px/1 var(--display);color:var(--ink);margin-bottom:10px}
@@ -173,6 +216,7 @@ footer.site a{color:var(--ink)}
   .lead{padding:0}
   .topline span:nth-child(1),.topline span:nth-child(3){display:none}.topline{justify-content:center}
   .search{grid-template-columns:minmax(0,1fr)}.search button{width:100%}
+  .callout form{flex-direction:column;align-items:stretch}.callout button{width:100%}
 }
 @media (max-width:520px){
   .wrap{padding:0 18px}
@@ -288,8 +332,105 @@ ${seoTags(title, opts.seo ?? {})}
 <style>${CSS}${opts.css ?? ''}</style></head><body>
 ${masthead(opts.compact ?? true)}
 ${main}
+${SHARE_JS}
 <footer class="site">${treeline()}<div class="sign">${esc(config.newsletterName)}</div>An independent public service from Ketchikan. Not an official Ketchikan Gateway Borough publication.<br>Recaps are written with AI from the Borough's own recordings and reviewed before they're published. <a href="/notes">Read every recap</a>.</footer>
 </body></html>`;
+}
+
+// Copy buttons and the phone's own share sheet. Links work without it.
+const SHARE_JS = `<script>(function(){
+document.querySelectorAll('[data-copy]').forEach(function(b){b.addEventListener('click',function(){
+var t=b.getAttribute('data-copy'),l=b.textContent,done=function(){b.textContent='Copied';setTimeout(function(){b.textContent=l},1800)};
+if(navigator.clipboard)navigator.clipboard.writeText(t).then(done,function(){prompt('Copy this link',t)});else prompt('Copy this link',t)})});
+if(navigator.share)document.querySelectorAll('[data-share]').forEach(function(b){b.hidden=false;b.addEventListener('click',function(){
+navigator.share({title:b.getAttribute('data-title')||document.title,text:b.getAttribute('data-text')||'',url:b.getAttribute('data-share')}).catch(function(){})})});
+})()</script>`;
+
+function withParam(url: string, key: string, value: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}${key}=${encodeURIComponent(value)}`;
+}
+
+/**
+ * Text, email, Facebook, copy. `url` is absolute. Public recap links are tagged
+ * with ?via= so the dashboard can tell which channel brought readers; invite links
+ * already carry ?r= and are left as they are.
+ */
+export function shareButtons(url: string, title: string, message: string, opts: { tag?: boolean; copyLabel?: string } = {}): string {
+  const tag = opts.tag ?? true;
+  const u = (ch: string) => (tag ? withParam(url, 'via', ch) : url);
+  const sms = `sms:?&body=${encodeURIComponent(`${message} ${u('sms')}`)}`;
+  const mail = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${message}\n\n${u('email')}`)}`;
+  const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(u('facebook'))}`;
+  return `<div class="share"><button type="button" class="primary" hidden data-share="${esc(u('share'))}" data-title="${esc(title)}" data-text="${esc(message)}">Share</button>
+<a href="${esc(sms)}">Text it</a><a href="${esc(mail)}">Email it</a><a href="${esc(fb)}" target="_blank" rel="noopener">Facebook</a>
+<button type="button" data-copy="${esc(u('copy'))}">${esc(opts.copyLabel ?? 'Copy link')}</button></div>`;
+}
+
+export interface Growth {
+  readers: number;
+  goal: number;
+  /** A valid invite code from the link this visitor arrived on. */
+  ref?: string;
+}
+
+/** Everyone's progress toward the next round number of readers. */
+export function goalBar(g: Growth): string {
+  const pct = Math.min(100, (100 * g.readers) / g.goal);
+  const share = g.readers >= 25 ? ` That's 1 in ${Math.round(BOROUGH_POPULATION / g.readers).toLocaleString('en-US')} Borough residents.` : '';
+  const line = g.readers
+    ? `<b>${g.readers.toLocaleString('en-US')}</b> of ${g.goal.toLocaleString('en-US')} Ketchikan readers.${share}${
+        g.readers < FOUNDING_READERS ? ` ${FOUNDING_READERS - g.readers} Founding Reader spots left.` : ''
+      }`
+    : `Be one of the first ${FOUNDING_READERS} readers. They keep a Founding Reader badge.`;
+  return `<div class="goal"><div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${g.goal}" aria-valuenow="${g.readers}" aria-label="Readers toward the goal of ${g.goal}"><span style="width:${pct.toFixed(1)}%"></span></div><p>${line}</p></div>`;
+}
+
+/** Sign-up at the foot of a recap: the reader just saw what they'd get. */
+export function signupCallout(g: Growth): string {
+  return `<section class="callout" id="subscribe">${g.ref ? '<p class="invited">A neighbor invited you to read along.</p>' : ''}<h2>Get the next one</h2>
+<p>A plain-language recap in your inbox after every Borough meeting. Free.</p>
+<form method="post" action="/subscribe"><input type="hidden" name="ref" value="${esc(g.ref ?? '')}"><input type="email" name="email" required autocomplete="email" placeholder="you@example.com" aria-label="Email address"><button type="submit">Subscribe</button></form>
+${goalBar(g)}</section>`;
+}
+
+function emblem(kind: 'spruce' | 'star', on: boolean): string {
+  const color = on ? (kind === 'star' ? 'var(--accent)' : 'var(--spruce)') : 'var(--rule)';
+  const mark =
+    kind === 'star'
+      ? '<path d="M20 9l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L20 25.5l-6.5 3.4 1.3-7.2-5.3-5.1 7.3-1z"/>'
+      : '<path d="M20 8l5 7h-3l5 7h-3.5l5.5 7H21.5v4h-3v-4H9l5.5-7H11l5-7h-3z"/>';
+  return `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="none" stroke="${color}" stroke-width="1.5"${on ? '' : ' stroke-dasharray="3 3"'}/><g fill="${on ? color : 'none'}" stroke="${color}" stroke-width="1.2" stroke-linejoin="round">${mark}</g></svg>`;
+}
+
+export interface InviteKit {
+  url: string;
+  count: number;
+  readerNo: number | null;
+  badges: { at: number; name: string; line: string }[];
+  foundingLimit: number;
+}
+
+/** A reader's own invite link, how many neighbors joined through it, and the badges along the way. */
+export function inviteKit(k: InviteKit): string {
+  const next = k.badges.find((b) => k.count < b.at);
+  const founding = k.readerNo !== null && k.readerNo <= k.foundingLimit;
+  const message = `I've been reading ${config.newsletterName}: plain-language recaps of every Ketchikan Assembly, School Board and Planning Commission meeting. It's free.`;
+  const ladder = [
+    ...(founding ? [`<li class="badge founding on">${emblem('star', true)}<b>Founding Reader</b>Reader #${k.readerNo} of the first ${k.foundingLimit}</li>`] : []),
+    ...k.badges.map((b) => `<li class="badge${k.count >= b.at ? ' on' : ''}">${emblem('spruce', k.count >= b.at)}<b>${esc(b.name)}</b>${k.count >= b.at ? esc(b.line) : `${b.at} neighbor${b.at === 1 ? '' : 's'}`}</li>`),
+  ].join('');
+  return `<section class="kit" id="invite"><h2>Bring a neighbor</h2>
+<p class="muted">Public meetings work better when more people know what happened. Send your link to someone who'd want to know; when they confirm, it counts toward your badges.</p>
+<div class="linkbox"><input type="text" readonly value="${esc(k.url)}" aria-label="Your invite link" onfocus="this.select()"><button type="button" data-copy="${esc(k.url)}">Copy</button></div>
+${shareButtons(k.url, `${config.newsletterName}`, message, { tag: false, copyLabel: 'Copy invite' })}
+<div class="score"><strong>${k.count}</strong><span>neighbor${k.count === 1 ? '' : 's'} joined through your link${next ? `.<br>${next.at - k.count} more and you're a <b>${esc(next.name)}</b>.` : '. Every badge earned. Thank you.'}</span></div>
+<ul class="badges">${ladder}</ul></section>`;
+}
+
+/** Where a new reader is in signing up. */
+export function stepList(current: 1 | 2 | 3): string {
+  const steps = ['Sign up', 'Confirm your email', 'Invite a neighbor'];
+  return `<ol class="steps">${steps.map((t, i) => `<li data-n="${i + 1}" class="${i + 1 < current ? 'done' : i + 1 === current ? 'now' : ''}">${t}</li>`).join('')}</ol>`;
 }
 
 /** A simple centered page for forms, confirmations and admin screens. Not indexed. */
@@ -571,7 +712,7 @@ const METHOD = `<ol class="method">
 </ol>
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
 
-export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = []) => {
+export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth) => {
   // Lead with the newest reviewed recap; fall back to the newest draft so the page is never empty.
   const draft = work.find((w) => w.headline);
   const lead = recent[0]
@@ -619,15 +760,16 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
     </div>
   </div>
   <aside class="signup" id="subscribe">
-    <h2>Get the recap</h2>
+    ${growth?.ref ? '<p class="invited">A neighbor invited you to read along.</p>' : ''}<h2>Get the recap</h2>
     <p>One email after each meeting, usually the next day.</p>
-    <form method="post" action="/subscribe">
+    <form method="post" action="/subscribe"><input type="hidden" name="ref" value="${esc(growth?.ref ?? '')}">
       <label for="email">Email address</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
       ${bodyCheckboxes()}
       ${topicCheckboxes(topics)}
       <button type="submit">Subscribe</button>
     </form>
     <p class="hint">Confirm by email. One-click unsubscribe in every message.</p>
+    ${growth ? goalBar(growth) : ''}
   </aside>
 </section>
 
@@ -731,7 +873,7 @@ ${transcript || '<p class="empty">No transcript yet.</p>'}
 export function noteDetailPage(
   meeting: MeetingInfo,
   d: MeetingDigest,
-  opts: { banner?: string; after?: string; draft?: boolean } = {},
+  opts: { banner?: string; after?: string; draft?: boolean; growth?: Growth } = {},
 ): string {
   const ts = (t: number) =>
     `<a class="ts" href="${esc(timestampUrl(meeting.sourceUrl, meeting.platform, t))}">▶ ${hms(t)}</a>`;
@@ -791,6 +933,8 @@ ${partsList(meeting.title, meeting.body)}
 <div class="body">${sections}</div>
 <div class="notice"><strong>How this was made</strong>Written with AI from the Borough's recording and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
 ${opts.after ?? ''}
+${!opts.draft && base ? `<p class="share-head">Share this recap</p>${shareButtons(base + canonical, d.headline, `${d.headline}: what happened at the ${placeBody(meeting.body)} meeting.`)}` : ''}
+${!opts.draft && opts.growth ? signupCallout(opts.growth) : ''}
 </article></main>`,
     {
       seo: {

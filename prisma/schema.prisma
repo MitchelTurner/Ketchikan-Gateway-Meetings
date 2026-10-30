@@ -81,6 +81,7 @@ model PageView {
   ref       String? // meeting id or topic slug
   path      String
   referrer  String? // host of an outside site that linked here
+  via       String? // invite | sms | email | facebook | copy | share: arrived through a share or invite link
   visitor   String // hash of IP and browser with a daily salt: counts people per day without storing either
   mobile    Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -104,10 +105,16 @@ model Subscriber {
   topics      String[] // Topic slugs for deep-dive emails; empty = none
   recaps      Boolean          @default(true) // false = topic emails only
   confirmedAt DateTime?
+  refCode      String?      @unique // personal invite code in /?r=…; made on confirmation
+  referredById String? // the reader whose invite link they signed up through
+  referredBy   Subscriber?  @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    Subscriber[] @relation("Referrals")
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   sends       EmailSend[]
   topicSends  TopicSend[]
+
+  @@index([referredById])
 }
 
 enum TopicStatus {

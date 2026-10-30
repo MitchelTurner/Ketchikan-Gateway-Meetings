@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Header, HttpCode, Logger, Param, Post, Query, Res } from '@nestjs/common';
-import type { Response } from 'express';
+import { Body, Controller, Get, Header, HttpCode, Logger, Param, Post, Query, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
@@ -8,8 +8,13 @@ import { BODIES, esc, randomToken, shortDate } from '../util';
 import { timestampUrl } from '../email/render';
 import type { DeepDiveArticle } from '../topics/deep-dive.service';
 import {
-  bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, topicCheckboxes, topicPage, topicsIndexPage, WorkHit,
+  BADGES, badgeFor, communityGoal, confirmedReaders, ensureRefCode, FOUNDING_READERS, inviteUrl, readerNumber, REF_PATTERN, referralCount,
+} from '../referrals';
+import {
+  bodyCheckboxes, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
+  topicsIndexPage, WorkHit,
 } from './page';
+import { readCookie } from './stats.service';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -59,13 +64,20 @@ export class PublicController {
 
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async home() {
-    const [recent, work, archiveCount] = await Promise.all([
+  async home(@Req() req: Request) {
+    const [recent, work, archiveCount, growth] = await Promise.all([
       this.publishedHits('', '', 5),
       this.workHits(),
       this.prisma.meeting.count(),
+      this.growth(req),
     ]);
-    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks', await this.topicOptions());
+    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks', await this.topicOptions(), growth);
+  }
+
+  /** Readers so far, the next goal, and the invite this visitor came in on (link first, then the remembered cookie). */
+  private async growth(req: Request): Promise<Growth> {
+    const readers = await confirmedReaders(this.prisma);
+    return { readers, goal: communityGoal(readers), ref: inviteCode(req) };
   }
 
   /** Published recaps — the same notes subscribers get by email, after review. Newest first. */
@@ -220,13 +232,13 @@ export class PublicController {
   /** The slug only makes the URL readable; the id finds the note. */
   @Get(['notes/:id', 'notes/:id/:slug'])
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async note(@Param('id') id: string) {
+  async note(@Param('id') id: string, @Req() req: Request) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
     const digest = m?.analysis?.approvedAt && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
     if (!m || !digest) {
       return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here after they've been reviewed and emailed. <a href="/notes">Back to search</a>.</p>`);
     }
-    return noteDetailPage(m, digest);
+    return noteDetailPage(m, digest, { growth: await this.growth(req) });
   }
 
   /**
@@ -237,7 +249,8 @@ export class PublicController {
   @Post('subscribe')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async subscribe(
-    @Body() body: { email?: string; bodies?: string | string[]; topics?: string | string[]; topicOnly?: string },
+    @Body() body: { email?: string; bodies?: string | string[]; topics?: string | string[]; topicOnly?: string; ref?: string },
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const email = String(body.email ?? '').trim().toLowerCase();
@@ -263,9 +276,16 @@ export class PublicController {
       }
     }
     if (existing?.status !== 'CONFIRMED') {
+      // Credit goes to a confirmed reader's link, never your own, and the first invite a person used keeps it.
+      const code = REF_PATTERN.test(String(body.ref ?? '')) ? String(body.ref) : inviteCode(req);
+      const inviter = code ? await this.prisma.subscriber.findUnique({ where: { refCode: code }, select: { id: true, email: true, confirmedAt: true } }) : null;
+      const referredById = inviter?.confirmedAt && inviter.email !== email ? inviter.id : null;
       const sub = existing
-        ? await this.prisma.subscriber.update({ where: { email }, data: { status: 'PENDING', bodies, topics, recaps, token: randomToken() } })
-        : await this.prisma.subscriber.create({ data: { email, bodies, topics, recaps, token: randomToken() } });
+        ? await this.prisma.subscriber.update({
+            where: { email },
+            data: { status: 'PENDING', bodies, topics, recaps, token: randomToken(), ...(existing.referredById || !referredById ? {} : { referredById }) },
+          })
+        : await this.prisma.subscriber.create({ data: { email, bodies, topics, recaps, token: randomToken(), referredById } });
       try {
         const url = `${config.publicBaseUrl}/confirm/${sub.token}`;
         await this.email.send({
@@ -283,18 +303,64 @@ export class PublicController {
         );
       }
     }
-    return page('Check your inbox', `<h1>Check your inbox</h1><p>We sent a confirmation link to <strong>${esc(email)}</strong>. Recaps start once you tap it.</p>`);
+    return page(
+      'Check your inbox',
+      `<h1>Check your inbox</h1><p>We sent a confirmation link to <strong>${esc(email)}</strong>. Recaps start once you tap it.</p>${stepList(2)}<p class="hint">Nothing there? Check spam or promotions, or <a href="/">sign up again</a>.</p>`,
+    );
   }
 
   @Get('confirm/:token')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async confirm(@Param('token') token: string) {
-    const sub = await this.prisma.subscriber.findUnique({ where: { token } });
+    let sub = await this.prisma.subscriber.findUnique({ where: { token } });
     if (!sub) return page('Link expired', `<h1>That link didn't work</h1><p><a href="/">Sign up again</a>.</p>`);
     if (sub.status !== 'CONFIRMED') {
-      await this.prisma.subscriber.update({ where: { id: sub.id }, data: { status: 'CONFIRMED', confirmedAt: new Date() } });
+      const firstTime = !sub.confirmedAt;
+      sub = await this.prisma.subscriber.update({ where: { id: sub.id }, data: { status: 'CONFIRMED', confirmedAt: sub.confirmedAt ?? new Date() } });
+      if (firstTime && sub.referredById) await this.thankInviter(sub.referredById);
     }
-    return page('Subscribed', `<h1>You're subscribed</h1><p>The next recap will arrive after the next Borough meeting is posted.</p>`);
+    const readerNo = await readerNumber(this.prisma, sub.confirmedAt!);
+    return page(
+      'Subscribed',
+      `<h1>You're subscribed</h1>${stepList(3)}
+<div class="reader-no"><span>You are reader</span><strong>#${readerNo.toLocaleString('en-US')}</strong><span>of ${esc(config.newsletterName)}</span></div>
+<p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a>.</p>
+${await this.kit(sub)}`,
+      true,
+    );
+  }
+
+  /** Personal invite link and badges for a subscriber's own pages. */
+  private async kit(sub: { id: string; refCode: string | null; confirmedAt: Date | null }): Promise<string> {
+    if (!sub.confirmedAt) return '';
+    const [code, count, readerNo] = await Promise.all([
+      ensureRefCode(this.prisma, sub),
+      referralCount(this.prisma, sub.id),
+      readerNumber(this.prisma, sub.confirmedAt),
+    ]);
+    return inviteKit({ url: inviteUrl(code), count, readerNo, badges: BADGES, foundingLimit: FOUNDING_READERS });
+  }
+
+  /** Tells a reader their invite worked. Only on a new confirmation, and never blocks it. */
+  private async thankInviter(inviterId: string) {
+    if (!config.emailReady) return;
+    try {
+      const inviter = await this.prisma.subscriber.findUnique({ where: { id: inviterId } });
+      if (!inviter || inviter.status !== 'CONFIRMED') return;
+      const count = await referralCount(this.prisma, inviter.id);
+      const badge = badgeFor(count);
+      const earned = badge && badge.at === count ? badge : null;
+      const url = `${config.publicBaseUrl}/preferences/${inviter.token}#invite`;
+      const headline = earned ? `You're now a ${earned.name}` : 'A neighbor joined through your link';
+      await this.email.send({
+        to: inviter.email,
+        subject: `${headline} · ${config.newsletterName}`,
+        html: `<p style="font-size:18px"><strong>${esc(headline)}.</strong></p><p>Someone you invited just confirmed their subscription to ${esc(config.newsletterName)}. That's ${count} neighbor${count === 1 ? '' : 's'} reading because of you.</p><p><a href="${esc(url)}">See your badges and invite link</a></p><p style="color:#5b6675;font-size:12px">We never tell you who signed up. ${esc(config.mailingAddress)}</p>`,
+        text: `${headline}. Someone you invited just confirmed. That's ${count} neighbor${count === 1 ? '' : 's'} reading because of you.\n\nYour badges and invite link: ${url}\n\n${config.mailingAddress}`,
+      });
+    } catch (err) {
+      this.log.warn(`Invite thank-you not sent: ${(err as Error).message}`);
+    }
   }
 
   // GET shows a button rather than acting, so email link-scanners can't unsubscribe people.
@@ -321,9 +387,10 @@ export class PublicController {
     if (!sub) return page('Not found', `<h1>That link didn't work</h1>`);
     return page(
       'Your email',
-      `<h1>What you get</h1><form method="post" action="/preferences/${esc(token)}">
+      `<h1>Your subscription</h1>${sub.status === 'CONFIRMED' ? await this.kit(sub) : ''}<h2 class="section">What you get</h2><form method="post" action="/preferences/${esc(token)}">
 <label class="check" style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="checkbox" name="recaps" value="1"${sub.recaps ? ' checked' : ''}> A recap after each meeting</label>
 ${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicOptions(), sub.topics)}<button type="submit">Save</button></form>`,
+      true,
     );
   }
 
@@ -371,4 +438,11 @@ function snippet(text: string, q: string): string {
     esc(clean.slice(i + q.length, end)) +
     (end < clean.length ? '…' : '')
   );
+}
+
+function inviteCode(req: Request): string | undefined {
+  const fromLink = typeof req.query.r === 'string' ? req.query.r : '';
+  if (REF_PATTERN.test(fromLink)) return fromLink;
+  const remembered = readCookie(req.headers.cookie, 'kgb_ref');
+  return REF_PATTERN.test(remembered) ? remembered : undefined;
 }
