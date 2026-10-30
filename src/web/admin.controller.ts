@@ -454,7 +454,7 @@ export class AdminController {
     return page('Send deep dive', `<h1>Send this deep dive?</h1><p><strong>${esc(headline)}</strong><br>Goes to ${n} subscriber${n === 1 ? '' : 's'} following ${esc(d.topic.name)}, and replaces the story on its topic page.</p>
 <p><a href="/admin/dives/${esc(id)}/preview">Read it first</a></p>
 <form method="post" action="/admin/dives/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Approve and send</button></form>
-<form method="post" action="/admin/dives/${esc(id)}/reject?sig=${esc(sig)}"><button type="submit" style="background:#fff;color:#141412;border:1px solid #c9c2b2">Don't send</button></form>`);
+<form method="post" action="/admin/dives/${esc(id)}/reject?sig=${esc(sig)}"><button type="submit" style="background:transparent;color:var(--text);border:1px solid var(--line-2)">Don't send</button></form>`);
   }
 
   @Post('dives/:id/approve')
