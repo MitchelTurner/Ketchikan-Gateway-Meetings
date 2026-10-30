@@ -168,33 +168,33 @@ export class DiscoveryService {
   }
 
   /**
-   * Recaps written before local news and the name check have no `news` field.
-   * Drop those drafts and run them again. Already-sent recaps stay as mailed.
+   * Draft recaps written before the name check (no `factCheck` field) are rewritten
+   * with the agenda, rosters and background sources. The old draft stays until the
+   * new one is saved. Already-sent recaps stay as mailed.
    */
-  async requeueRecapsWithoutNews(): Promise<number> {
+  async requeueOutdatedRecaps(): Promise<number> {
     const rows = await this.prisma.meeting.findMany({
       where: {
         status: { in: ['AWAITING_APPROVAL', 'FAILED'] },
         transcript: { isNot: null },
-        analysis: { isNot: null },
+        analysis: { is: { approvedAt: null } },
       },
       select: { id: true, analysis: { select: { data: true } } },
     });
     let n = 0;
     for (const m of rows) {
       const data = m.analysis?.data;
-      if (data && typeof data === 'object' && !Array.isArray(data) && 'news' in data) continue;
-      await this.prisma.analysis.delete({ where: { meetingId: m.id } });
-      await this.enqueueProcess(m.id);
+      if (data && typeof data === 'object' && !Array.isArray(data) && 'factCheck' in data) continue;
+      await this.enqueueProcess(m.id, { refreshRecap: true });
       n++;
     }
     return n;
   }
 
-  enqueueProcess(meetingId: string) {
+  enqueueProcess(meetingId: string, opts: { refreshRecap?: boolean } = {}) {
     return this.processQ.add(
       'process',
-      { meetingId },
+      { meetingId, ...opts },
       {
         jobId: `process-${meetingId}-${Date.now()}`,
         attempts: 3,

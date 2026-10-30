@@ -30,7 +30,7 @@ export class PipelineService {
   ) {}
 
   /** download → transcribe → analyze → (approval email | deliver). Each stage is skipped if already done. */
-  async processMeeting(meetingId: string) {
+  async processMeeting(meetingId: string, opts: { refreshRecap?: boolean } = {}) {
     const meeting = await this.prisma.meeting.findUniqueOrThrow({
       where: { id: meetingId },
       include: { transcript: true, analysis: true },
@@ -64,6 +64,20 @@ export class PipelineService {
         await this.setStatus(meetingId, 'ANALYZING');
         const digest = await this.analysis.analyze(meeting, segments);
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
+      } else if (opts.refreshRecap && !meeting.analysis.approvedAt) {
+        // An unsent draft is rewritten in place; if that fails the earlier draft stays up.
+        await this.setStatus(meetingId, 'ANALYZING');
+        try {
+          const digest = await this.analysis.analyze(meeting, segments);
+          await this.prisma.analysis.update({ where: { meetingId }, data: { model: this.analysis.model, data: digest as any } });
+        } catch (err) {
+          this.log.warn(`Recap refresh failed for ${meetingId}, keeping the earlier draft: ${(err as Error).message}`);
+          await this.prisma.meeting.update({
+            where: { id: meetingId },
+            data: { status: 'AWAITING_APPROVAL', error: `Recap refresh failed, showing the earlier draft: ${(err as Error).message}`.slice(0, 2000) },
+          });
+          return;
+        }
       }
 
       await this.setStatus(meetingId, 'AWAITING_APPROVAL');

@@ -23,8 +23,8 @@ export class ProcessProcessor extends WorkerHost {
   constructor(private pipeline: PipelineService) {
     super();
   }
-  async process(job: Job<{ meetingId: string }>) {
-    await this.pipeline.processMeeting(job.data.meetingId);
+  async process(job: Job<{ meetingId: string; refreshRecap?: boolean }>) {
+    await this.pipeline.processMeeting(job.data.meetingId, { refreshRecap: job.data.refreshRecap });
   }
 }
 
@@ -52,7 +52,7 @@ export class DiscoveryScheduler implements OnApplicationBootstrap {
     );
     await this.controlQ.add('discover', {}, { jobId: `discover-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
     const unfinished = await this.discovery.requeueUnfinished();
-    const recaps = await this.discovery.requeueRecapsWithoutNews();
-    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued. ${recaps} recap(s) queued to add local news and name checks.`);
+    const recaps = await this.discovery.requeueOutdatedRecaps();
+    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued. ${recaps} draft recap(s) queued to add the agenda, name check and background sources.`);
   }
 }
