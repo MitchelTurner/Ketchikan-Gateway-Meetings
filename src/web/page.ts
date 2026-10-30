@@ -20,26 +20,29 @@ color-scheme:dark}
 --text:#0a0f14;--text-2:#3b4652;--muted:#67717d;--teal:#0f8f80;--green:#15803d;--indigo:#4f46e5;--violet:#7c3aed;--rose:#e11d48;
 --btn-bg:#0a0f14;--btn-text:#fff;--shadow:none;color-scheme:light}}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-bottom:88px}
+body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;padding-bottom:calc(72px + env(safe-area-inset-bottom))}
 a{color:inherit;text-decoration-color:var(--line-2);text-underline-offset:3px}
 a:hover{color:var(--teal);text-decoration-color:currentColor}
 ::selection{background:var(--teal);color:var(--bg)}
-.wrap{max-width:720px;margin:0 auto;padding:0 28px}
+.wrap{max-width:720px;margin:0 auto;padding:0 18px}
 .narrow{max-width:680px}
 
-/* Navigation. Same width as the reading column, so the links line up with the text. */
-.nav{position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line)}
-.nav-in{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;padding:12px 0 0}
-.brand{display:inline-flex;align-items:center;gap:10px;margin-right:auto;text-decoration:none;font:600 15px/1.2 var(--sans);letter-spacing:-.02em;color:var(--text);white-space:nowrap}
+/* The name sits in the page. Movement is the icon bar at the bottom. */
+.nameplate{padding:18px 0 0}
+.nameplate a{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font:600 15px/1.2 var(--sans);letter-spacing:-.02em;color:var(--text)}
+.nameplate a:hover{color:var(--text)}
+.brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none;font:600 15px/1.2 var(--sans);letter-spacing:-.02em;color:var(--text)}
 .brand:hover{color:var(--text)}
-.mark{flex:0 0 22px;width:22px;height:22px;border-radius:6px;background:var(--teal);display:grid;place-items:center}
-.mark svg{width:18px;height:18px}
-.links{display:flex;flex:1 0 100%;order:3;gap:2px;margin:0 -10px;padding:2px 0 8px;font:500 15px/1 var(--sans)}
-.links a{padding:8px 10px;border-radius:8px;color:var(--text-2);text-decoration:none}
-.links a:hover{color:var(--text);background:var(--surface-2)}
-.cta{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:var(--btn-bg);color:var(--btn-text);font:600 14px/1 var(--sans);text-decoration:none;white-space:nowrap}
-.cta:hover{color:var(--btn-text);opacity:.88}
+.mark{flex:0 0 18px;width:18px;height:18px;border-radius:5px;background:var(--teal);display:grid;place-items:center}
+.mark svg{width:14px;height:14px}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--bg);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.tabbar-in{max-width:720px;margin:0 auto;display:flex}
+.tabbar a{flex:1 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:56px;padding:8px 2px 7px;color:var(--muted);text-decoration:none;font:500 10.5px/1 var(--sans);letter-spacing:0}
+.tabbar a:hover{color:var(--text)}
+.tabbar a[aria-current="page"]{color:var(--teal)}
+.tabbar svg{display:block;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.tabbar a[aria-current="page"] svg{stroke-width:2.15}
 
 /* Type */
 h1,h2,h3{font-family:var(--sans);font-weight:600;letter-spacing:-.02em;margin:0;color:var(--text)}
@@ -59,7 +62,7 @@ mark{background:color-mix(in srgb,var(--teal) 28%,transparent);color:var(--text)
 .empty{color:var(--muted)}
 
 /* Generic page body */
-.sheet{padding:56px 0 8px}
+.sheet{padding:22px 0 8px}
 .sheet h2{font-size:22px;margin:30px 0 10px}
 h2.section{font:500 12px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line);padding-top:14px;margin:40px 0 16px}
 
@@ -84,8 +87,8 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 /* Front page: one column, top to bottom, in the same order as the nav. */
 .hero-band{border-bottom:0}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--teal) 45%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
-.hero{display:block;padding:40px 0 8px}
-.hero h1{font-size:clamp(32px,4.4vw,42px);line-height:1.18;letter-spacing:-.025em;margin:0 0 12px}
+.hero{display:block;padding:22px 0 8px}
+.hero h1{font-size:34px;line-height:1.18;letter-spacing:-.025em;margin:0 0 12px}
 .hero .dek{max-width:38em;font-size:18.5px}
 .facts{margin:18px 0 0;font:400 14.5px/1.5 var(--sans);color:var(--muted)}
 .facts b{color:var(--text);font-weight:600}
@@ -109,10 +112,10 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 /* Docket: the meeting list */
 .docket{list-style:none;margin:0;padding:0}
 .docket>li+li{margin-top:4px}
-.docket a{display:grid;grid-template-columns:84px minmax(0,1fr) auto;gap:4px 20px;padding:16px 14px;margin:0 -14px;text-decoration:none;border-radius:14px;transition:background .15s}
+.docket a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:14px 0;margin:0;text-decoration:none;border-radius:14px;transition:background .15s}
 .docket a:hover{background:var(--surface-2)}
-.docket .when{font:500 11px/1.4 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding-top:2px}
-.docket .when b{display:block;font:500 24px/1.05 var(--mono);letter-spacing:-.04em;color:var(--text);text-transform:none}
+.docket .when{grid-column:1 / -1;font:500 11px/1.4 var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--muted);padding:0}
+.docket .when b{display:inline;font:600 13px/1.2 var(--sans);letter-spacing:0;color:var(--text);text-transform:none;margin:0 5px}
 .docket h3{font-size:17px;line-height:1.35;letter-spacing:-.02em;margin:0 0 4px}
 .docket a:hover h3{color:var(--teal)}
 .docket .parts{list-style:none;margin:0 0 4px;padding:0;font:400 13.5px/1.5 var(--sans);color:var(--muted)}
@@ -134,14 +137,14 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .aside-note{font-size:13.5px;line-height:1.6;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin:4px 0 0}
 
 /* Article */
-.article{padding:64px 0 24px}
+.article{padding:20px 0 24px}
 .article h1{font-size:clamp(30px,3.6vw,40px);line-height:1.22;letter-spacing:-.025em;margin-bottom:14px}
 .byline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:24px 0 40px}
 .byline > *{display:inline-flex;align-items:center;height:32px;padding:0 13px;border:1px solid var(--line-2);border-radius:999px;font:500 13px/1 var(--sans);color:var(--text-2);text-decoration:none}
 .byline a:hover{border-color:var(--teal);color:var(--teal)}
 .article .parts{list-style:none;margin:0;padding:0;font:400 16px/1.55 var(--sans);color:var(--muted)}
-.body{font:400 17.5px/1.75 var(--sans);color:var(--text-2)}
-.body > p:first-of-type{font-size:20.5px;line-height:1.6;color:var(--text);letter-spacing:-.01em}
+.body{font:400 17px/1.7 var(--sans);color:var(--text-2)}
+.body > p:first-of-type{font-size:19px;line-height:1.6;color:var(--text);letter-spacing:-.01em}
 .body h2{font-size:20px;line-height:1.3;letter-spacing:-.02em;margin:40px 0 12px;padding-top:16px;border-top:1px solid var(--line)}
 .body ul{padding-left:0;margin:0;list-style:none}
 .body li{position:relative;padding-left:24px;margin:0 0 14px}
@@ -156,7 +159,7 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .status-line{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
 .status-line .muted{margin:0}
 .transcript{margin-top:56px}
-.transcript p{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;font:400 15px/1.6 var(--sans);color:var(--text-2);margin:0 0 12px}
+.transcript p{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;font:400 15px/1.6 var(--sans);color:var(--text-2);margin:0 0 12px}
 .transcript .who{font:500 12px/1.7 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 
 /* Search and lists */
@@ -167,8 +170,8 @@ a.hit:hover{border-color:var(--line-2);background:var(--surface-2)}
 .hit h2{font-size:22px;line-height:1.3;letter-spacing:-.02em;margin:0 0 8px}
 .hit p{margin:0;font:400 15px/1.6 var(--sans);color:var(--text-2)}
 a.hit:hover h2{color:var(--teal)}
-.search{display:grid;grid-template-columns:minmax(0,1fr) 200px auto;gap:12px;align-items:end;margin:8px 0 24px}
-.search label{margin:0 0 8px}.search button{margin:0;width:auto;padding:14px 22px}
+.search{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:end;margin:8px 0 24px}
+.search label{margin:0 0 8px}.search button{margin:0;width:100%;padding:14px 22px}
 
 /* Sharing, invites and the community goal */
 .share{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -186,10 +189,10 @@ a.hit:hover h2{color:var(--teal)}
 .callout{margin:48px 0 0;border:0;border-top:1px solid var(--line);background:transparent;border-radius:0;padding:28px 0 0;text-align:left;box-shadow:none}
 .callout h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
 .callout > p{font:400 16px/1.55 var(--sans);color:var(--text-2);margin:0}
-.callout form{display:flex;gap:10px;max-width:480px;margin:18px 0 0;align-items:stretch}
+.callout form{display:flex;flex-direction:column;gap:10px;max-width:480px;margin:18px 0 0;align-items:stretch}
 .callout input[type=email]{flex:1}
-.callout button{width:auto;margin:0;padding:0 22px}
-.kit{margin:40px 0 0;padding:28px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
+.callout button{width:100%;margin:0;padding:15px}
+.kit{margin:40px 0 0;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
 .kit h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
 .kit .goal p{text-align:left}
 .linkbox{display:flex;gap:8px;margin:18px 0 12px}
@@ -215,56 +218,78 @@ a.hit:hover h2{color:var(--teal)}
 .steps li.now{color:var(--text)}.steps li.now::before{border-color:var(--teal);color:var(--teal);box-shadow:0 0 0 4px color-mix(in srgb,var(--teal) 15%,transparent)}
 
 /* Footer */
-footer.site{position:relative;margin-top:64px;border-top:1px solid var(--line);padding:40px 0 36px;font:400 14px/1.65 var(--sans);color:var(--muted)}
-.foot{display:grid;grid-template-columns:1fr 1fr;gap:28px 32px}
-.foot > div:first-child{grid-column:1 / -1}
-.foot p{max-width:30em;margin:16px 0 0}
-.foot h4{font:500 12px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--text);margin:4px 0 14px}
-.foot nav a{display:block;text-decoration:none;color:var(--text-2);margin:0 0 9px}
-.foot nav a:hover{color:var(--teal)}
-.fine{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 24px;margin-top:44px;padding-top:22px;border-top:1px solid var(--line);font:400 12.5px/1.5 var(--mono);color:var(--muted)}
+footer.site{position:relative;margin-top:48px;border-top:1px solid var(--line);padding:32px 0 20px;font:400 14px/1.65 var(--sans);color:var(--muted)}
+footer.site p{max-width:34em;margin:12px 0 0}
+.fine{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font:400 12.5px/1.5 var(--sans);color:var(--muted)}
+.fine a{color:var(--text-2);text-decoration:none}
+.fine a:hover{color:var(--teal)}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}html{scroll-behavior:auto}}
-@media (max-width:900px){
-  .search{grid-template-columns:minmax(0,1fr)}.search button{width:100%}
-}
-@media (max-width:420px){
-  .brand{font-size:14px}
-  .cta{padding:8px 12px;font-size:13px}
-  .links{overflow-x:auto;scrollbar-width:none}
-  .links::-webkit-scrollbar{display:none}
-}
-@media (max-width:520px){
-  .wrap{padding:0 18px}
-  .grid > *{padding:28px 0 4px}
-  .body{font-size:17px}.body > p:first-of-type{font-size:19px}
-  .docket a{grid-template-columns:minmax(0,1fr) auto}
-  .docket .when{grid-column:1 / -1;padding:0}.docket .when b{display:inline;font-size:13px;margin:0 5px}
-  .transcript p{grid-template-columns:minmax(0,1fr);gap:2px}
-  .callout form{flex-direction:column}.callout button{width:100%;padding:15px}
-  .kit{padding:22px 18px}
+@media (min-width:640px){
+  .wrap{padding:0 28px}
+  .hero{padding:40px 0 8px}
+  .hero h1{font-size:42px}
+  .article{padding:36px 0 24px}
+  .body{font-size:17.5px;line-height:1.75}
+  .body > p:first-of-type{font-size:20.5px}
+  .docket a{grid-template-columns:84px minmax(0,1fr) auto;gap:4px 20px;padding:16px 14px;margin:0 -14px}
+  .docket .when{grid-column:auto;padding-top:2px}
+  .docket .when b{display:block;font:500 24px/1.05 var(--mono);letter-spacing:-.04em;margin:0}
+  .search{grid-template-columns:minmax(0,1fr) 200px auto}
+  .search button{width:auto}
+  .callout form{flex-direction:row}
+  .callout button{width:auto;padding:0 22px}
+  .transcript p{grid-template-columns:76px minmax(0,1fr);gap:12px}
+  .kit{padding:28px;border-radius:20px}
 }
 `;
 
 const MARK = `<span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 18.5l6-9 4 6 3-4 6 7"/></svg></span>`;
 
-function masthead(_compact: boolean): string {
-  return `<header class="nav"><div class="wrap nav-in">
-<a class="brand" href="/">${MARK}<span>${esc(config.newsletterName)}</span></a>
-<nav class="links" aria-label="Sections"><a href="/notes">Recaps</a><a href="/topics">Topics</a><a href="/#docket">Docket</a><a href="/#how">How it works</a></nav>
-<a class="cta" href="/#subscribe">Subscribe</a>
-</div></header>`;
+function icon(paths: string): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+}
+
+const TABS: { key: string; href: string; label: string; paths: string }[] = [
+  { key: 'home', href: '/', label: 'Home', paths: '<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/>' },
+  { key: 'recaps', href: '/notes', label: 'Recaps', paths: '<path d="M7 3.5h7l5 5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z"/><path d="M14 3.5V9h5M9 13h6M9 16.5h6"/>' },
+  { key: 'topics', href: '/topics', label: 'Topics', paths: '<path d="M12 3 3.5 8 12 13l8.5-5L12 3z"/><path d="m3.5 12 8.5 5 8.5-5M3.5 16l8.5 5 8.5-5"/>' },
+  { key: 'docket', href: '/#docket', label: 'Docket', paths: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10h16"/>' },
+  { key: 'subscribe', href: '/#subscribe', label: 'Subscribe', paths: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>' },
+];
+
+/** Fixed to the bottom of the screen. The script marks the section you're in. */
+function tabbar(): string {
+  const links = TABS.map((t) => `<a data-tab="${t.key}" href="${t.href}">${icon(t.paths)}<span>${t.label}</span></a>`).join('');
+  return `<nav class="tabbar" aria-label="Sections"><div class="tabbar-in">${links}</div></nav>`;
+}
+
+const TAB_JS = `<script>(function(){
+function mark(){
+  var path=location.pathname,hash=location.hash;
+  document.querySelectorAll('.tabbar a').forEach(function(a){
+    var key=a.getAttribute('data-tab'),on=false;
+    if(key==='home') on=path==='/'&&hash!=='#docket'&&hash!=='#subscribe';
+    else if(key==='recaps') on=path==='/notes'||path.indexOf('/notes/')===0;
+    else if(key==='topics') on=path==='/topics'||path.indexOf('/topics/')===0;
+    else if(key==='docket') on=path.indexOf('/meetings/')===0||(path==='/'&&hash==='#docket');
+    else if(key==='subscribe') on=path==='/'&&hash==='#subscribe';
+    if(on) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current');
+  });
+}
+mark();
+window.addEventListener('hashchange',mark);
+})()</script>`;
+
+function nameplate(): string {
+  return `<div class="wrap nameplate"><a href="/">${MARK}<span>${esc(config.newsletterName)}</span></a></div>`;
 }
 
 function footer(): string {
   return `<footer class="site"><div class="wrap">
-<div class="foot">
-<div><a class="brand" href="/">${MARK}<span>${esc(config.newsletterName)}</span></a>
-<p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough publication. Recaps are written with AI from the Borough's own recordings and reviewed before they're published.</p></div>
-<nav aria-label="Read"><h4>Read</h4><a href="/notes">Every recap</a><a href="/topics">Topics</a><a href="/#docket">The docket</a></nav>
-<nav aria-label="Follow"><h4>Follow</h4><a href="/#subscribe">Subscribe</a><a href="/#how">How we report</a><a href="/sitemap.xml">Sitemap</a></nav>
-</div>
-<div class="fine"><span>Ketchikan · Southeast Alaska</span><span>55.34°N 131.65°W</span></div>
+<a class="brand" href="/">${MARK}<span>${esc(config.newsletterName)}</span></a>
+<p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough publication. Recaps are written with AI from the Borough's own recordings and reviewed before they're published.</p>
+<div class="fine"><a href="/#how">How we report</a><a href="/sitemap.xml">Sitemap</a><span>Ketchikan · 55.34°N 131.65°W</span></div>
 </div></footer>`;
 }
 
@@ -307,16 +332,18 @@ function seoTags(title: string, seo: Seo): string {
   return tags.filter(Boolean).join('\n');
 }
 
-/** Full document: masthead, the page's own main element, footer. */
+/** Full document: the page name, its main element, the footer, and the bottom icon bar. */
 function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo; css?: string; bodyClass?: string } = {}): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light"><meta name="theme-color" content="#06080b" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)"><title>${esc(title)}</title>
 ${seoTags(title, opts.seo ?? {})}
 <style>${CSS}${opts.css ?? ''}</style></head><body${opts.bodyClass ? ` class="${esc(opts.bodyClass)}"` : ''}>
-${masthead(opts.compact ?? true)}
+${nameplate()}
 ${main}
-${SHARE_JS}
 ${footer()}
+${opts.bodyClass === 'desk' ? '' : tabbar()}
+${SHARE_JS}
+${opts.bodyClass === 'desk' ? '' : TAB_JS}
 </body></html>`;
 }
 
@@ -426,11 +453,9 @@ export function page(title: string, inner: string, wide = false, below = ''): st
 }
 
 const ADMIN_CSS = `
+body.desk{padding-bottom:0}
 body.desk .wrap{max-width:1180px}
-body.desk .nav-in{flex-wrap:nowrap;gap:18px;min-height:56px;padding:0}
-body.desk .links{flex:0 1 auto;order:0;margin:0;padding:0}
-body.desk .cta{margin-left:auto}
-.adminbar{position:sticky;top:56px;z-index:40;border-bottom:1px solid var(--line);background:var(--bg)}
+.adminbar{position:sticky;top:0;z-index:40;border-bottom:1px solid var(--line);background:var(--bg)}
 .adminbar .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;min-height:52px;font:500 14px/1 var(--sans)}
 .adminbar a{text-decoration:none;color:var(--text-2);padding:8px 12px;border-radius:999px}
 .adminbar a:hover{color:var(--text);background:var(--surface-2)}
