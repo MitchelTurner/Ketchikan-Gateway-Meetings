@@ -158,7 +158,7 @@ export class DiscoveryService {
     const pending = await this.prisma.meeting.findMany({
       where: {
         meetingDate: { gte: config.processSince },
-        status: { in: ['DISCOVERED', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'FAILED'] },
+        status: { in: ['DISCOVERED', 'RESEARCHING', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'FAILED'] },
         OR: [{ transcript: { is: null } }, { analysis: { is: null } }],
       },
       select: { id: true },

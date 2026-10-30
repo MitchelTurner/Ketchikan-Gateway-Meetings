@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { timestampUrl } from '../email/render';
+import { sourceLabel, timestampUrl } from '../email/render';
 import { MeetingDigest } from '../analysis/analysis.service';
 import { BODIES, esc, formatDate, hms } from '../util';
 
@@ -114,6 +114,7 @@ export function hitList(hits: NoteHit[]): string {
 
 const STATUS_LABEL: Record<string, string> = {
   DISCOVERED: 'Found — waiting to download',
+  RESEARCHING: 'Looking up the agenda and news coverage',
   DOWNLOADING: 'Downloading audio',
   TRANSCRIBING: 'Transcribing',
   ANALYZING: 'Writing the recap',
@@ -249,6 +250,8 @@ export function noteDetailPage(
   const discussion = (d.discussion ?? []).filter((x) => x && (x.topic || x.gist));
   const comments = (d.publicComment ?? []).filter((x) => x && (x.who || x.topic || x.gist));
   const upcoming = (d.upcoming ?? []).filter((x) => x && x.item);
+  const background = (d.background ?? []).filter((x) => x && x.point);
+  const fixes = (d.nameCorrections ?? []).filter((x) => x && x.heard && x.corrected);
   const sections = [
     String(d.summary ?? '')
       .split(/\n\s*\n/)
@@ -268,10 +271,17 @@ export function noteDetailPage(
     upcoming.length
       ? h2('Coming up') + list(upcoming.map((x) => `${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))
       : '',
+    background.length
+      ? h2('Background from local news') +
+        list(background.map((x) => `${esc(x.point)} ${(x.sources ?? []).map((u) => `<a href="${esc(u)}">${esc(sourceLabel(u))}</a>`).join(' · ')}`))
+      : '',
   ].join('');
   const caveats = [
     'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
     ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []),
+    ...(fixes.length
+      ? [`Names corrected from the transcript using the Borough's published spelling: ${fixes.map((f) => `"${f.heard}" → ${f.corrected}`).join(', ')}.`]
+      : []),
   ];
   return page(
     d.headline,

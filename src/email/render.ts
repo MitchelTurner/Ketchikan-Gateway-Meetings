@@ -22,6 +22,15 @@ export function timestampUrl(url: string, platform: string, t: number): string {
   return url;
 }
 
+/** "krbd.org" for a link label. */
+export function sourceLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 // Light-only, inline-styled, table-free enough for most clients.
 const C = { ink: '#1b2430', muted: '#5b6675', rule: '#e3e7ec', accent: '#0b5d7a', bg: '#f6f7f9', card: '#ffffff' };
 
@@ -43,6 +52,7 @@ export function renderHtml(i: RenderInput): string {
   const discussion = rows(d.discussion).filter((x) => x.topic || x.gist);
   const comments = rows(d.publicComment).filter((x) => x.who || x.topic || x.gist);
   const upcoming = rows(d.upcoming).filter((x) => x.item);
+  const background = rows(d.background).filter((x) => x.point);
   const sections: string[] = [];
   sections.push(
     String(d.summary ?? '')
@@ -63,6 +73,15 @@ export function renderHtml(i: RenderInput): string {
     );
   if (upcoming.length)
     sections.push(h2('Coming up') + list(upcoming.map((x) => li(`${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))));
+  if (background.length)
+    sections.push(
+      h2('Background from local news') +
+        list(
+          background.map((x) =>
+            li(`${esc(x.point)} ${(x.sources ?? []).map((u) => `<a href="${esc(u)}" style="color:${C.accent}">${esc(sourceLabel(u))}</a>`).join(' · ')}`),
+          ),
+        ),
+    );
 
   const caveat = [
     'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
@@ -94,12 +113,14 @@ export function renderText(i: RenderInput): string {
   const discussion = rows(d.discussion).filter((x) => x.topic || x.gist);
   const comments = rows(d.publicComment).filter((x) => x.who || x.topic || x.gist);
   const upcoming = rows(d.upcoming).filter((x) => x.item);
+  const background = rows(d.background).filter((x) => x.point);
   const out: string[] = [d.headline, `${m.title}${m.meetingDate ? ` — ${formatDate(m.meetingDate)}` : ''}`, `Video: ${m.sourceUrl}`, '', String(d.summary ?? ''), ''];
   const sec = (title: string, lines: string[]) => lines.length && out.push(title.toUpperCase(), ...lines.map((r) => `- ${r}`), '');
   sec('What they decided', actions.map((a) => `${a.item} — ${a.outcome}${a.vote ? ` (${a.vote})` : ''} [${hms(a.t)}]`));
   sec('Also discussed', discussion.map((x) => `${x.topic}: ${x.gist} [${hms(x.t)}]`));
   sec('Public comment', comments.map((x) => `${x.who} on ${x.topic}: ${x.gist} [${hms(x.t)}]`));
   sec('Coming up', upcoming.map((x) => `${x.item}${x.when ? ` — ${x.when}` : ''}`));
+  sec('Background from local news', background.map((x) => `${x.point} ${(x.sources ?? []).join(' ')}`));
   out.push('Written by AI from an automated transcript; check the video before relying on it.', ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []), '');
   out.push(`Not an official Borough publication. Unsubscribe: ${i.unsubscribeUrl}`, i.mailingAddress);
   return out.join('\n');
