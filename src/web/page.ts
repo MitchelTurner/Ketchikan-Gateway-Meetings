@@ -28,14 +28,7 @@ a:hover{color:var(--teal);text-decoration-color:currentColor}
 .wrap{max-width:720px;margin:0 auto;padding:0 18px}
 .narrow{max-width:680px}
 
-/* The name sits in the page. Movement is the icon bar at the bottom. */
-.nameplate{padding:18px 0 0}
-.nameplate a{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font:600 15px/1.2 var(--sans);letter-spacing:-.02em;color:var(--text)}
-.nameplate a:hover{color:var(--text)}
-.brand{display:inline-flex;align-items:center;gap:10px;text-decoration:none;font:600 15px/1.2 var(--sans);letter-spacing:-.02em;color:var(--text)}
-.brand:hover{color:var(--text)}
-.mark{flex:0 0 18px;width:18px;height:18px;border-radius:5px;background:var(--teal);display:grid;place-items:center}
-.mark svg{width:14px;height:14px}
+/* Movement is the icon bar at the bottom. */
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--bg);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 .tabbar-in{max-width:720px;margin:0 auto;display:flex}
 .tabbar a{flex:1 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:56px;padding:8px 2px 7px;color:var(--muted);text-decoration:none;font:500 10.5px/1 var(--sans);letter-spacing:0}
@@ -220,7 +213,7 @@ a.hit:hover h2{color:var(--teal)}
 
 /* Footer */
 footer.site{position:relative;margin-top:48px;border-top:1px solid var(--line);padding:32px 0 20px;font:400 14px/1.65 var(--sans);color:var(--muted)}
-footer.site p{max-width:34em;margin:12px 0 0}
+footer.site p{max-width:34em;margin:0}
 .fine{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font:400 12.5px/1.5 var(--sans);color:var(--muted)}
 .fine a{color:var(--text-2);text-decoration:none}
 .fine a:hover{color:var(--teal)}
@@ -244,8 +237,6 @@ footer.site p{max-width:34em;margin:12px 0 0}
   .kit{padding:28px;border-radius:20px}
 }
 `;
-
-const MARK = `<span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 18.5l6-9 4 6 3-4 6 7"/></svg></span>`;
 
 function icon(paths: string): string {
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
@@ -282,13 +273,8 @@ mark();
 window.addEventListener('hashchange',mark);
 })()</script>`;
 
-function nameplate(): string {
-  return `<div class="wrap nameplate"><a href="/">${MARK}<span>${esc(config.newsletterName)}</span></a></div>`;
-}
-
 function footer(): string {
   return `<footer class="site"><div class="wrap">
-<a class="brand" href="/">${MARK}<span>${esc(config.newsletterName)}</span></a>
 <p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough publication. Recaps are written with AI from the Borough's own recordings and reviewed before they're published.</p>
 <div class="fine"><a href="/#how">How we report</a><a href="/sitemap.xml">Sitemap</a><span>Ketchikan · 55.34°N 131.65°W</span></div>
 </div></footer>`;
@@ -339,7 +325,6 @@ function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo
 <meta name="color-scheme" content="dark light"><meta name="theme-color" content="#06080b" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)"><title>${esc(title)}</title>
 ${seoTags(title, opts.seo ?? {})}
 <style>${CSS}${opts.css ?? ''}</style></head><body${opts.bodyClass ? ` class="${esc(opts.bodyClass)}"` : ''}>
-${nameplate()}
 ${main}
 ${footer()}
 ${opts.bodyClass === 'desk' ? '' : tabbar()}
@@ -531,7 +516,7 @@ input.headline{font:600 22px/1.25 var(--sans);letter-spacing:-.025em}
 
 export type AdminTab = 'overview' | 'posts' | 'meetings' | 'topics' | '';
 
-/** Signed-in screens: a working bar under a compact nameplate, full width. Not indexed. */
+/** Signed-in screens: a working bar, full width. Not indexed. */
 export function adminPage(title: string, tab: AdminTab, inner: string, signedIn = true): string {
   const link = (href: string, label: string, key: AdminTab) => `<a href="${href}"${key && key === tab ? ' class="on" aria-current="page"' : ''}>${label}</a>`;
   const links = signedIn
