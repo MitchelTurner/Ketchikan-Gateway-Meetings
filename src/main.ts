@@ -2,6 +2,8 @@ import 'dotenv/config';
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import express from 'express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { config } from './config';
 import { HtmlExceptionFilter } from './web/http-exception.filter';
@@ -9,6 +11,7 @@ import { StatsService } from './web/stats.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.use('/fonts', express.static(join(process.cwd(), 'public', 'fonts'), { maxAge: '365d', immutable: true }));
   app.useGlobalFilters(new HtmlExceptionFilter());
   app.use(app.get(StatsService).middleware());
   app.enableShutdownHooks();
