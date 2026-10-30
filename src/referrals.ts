@@ -22,11 +22,11 @@ export interface Badge {
 
 /** Earned by neighbors who confirm through your link. Merch is mailed; the editor sends it from the Growth list. */
 export const BADGES: Badge[] = [
-  { at: 1, name: 'Foghorn', line: 'One neighbor heard it from you' },
+  { at: 1, name: 'Greenhorn', line: 'One neighbor heard it from you' },
   { at: 3, name: 'Deckhand', line: 'Three neighbors reading along' },
   { at: 5, name: 'Skipper', line: 'Five neighbors reading along', merch: 'sticker' },
-  { at: 10, name: 'Pilot', line: 'Ten neighbors reading along', merch: 't-shirt' },
-  { at: 25, name: 'Tongass', line: 'Twenty-five neighbors reading along', merch: 'hat and a t-shirt' },
+  { at: 10, name: 'Captain', line: 'Ten neighbors reading along', merch: 't-shirt' },
+  { at: 25, name: 'Commodore', line: 'Twenty-five neighbors reading along', merch: 'hat and a t-shirt' },
 ];
 
 export function badgeFor(count: number): Badge | null {
