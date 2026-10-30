@@ -67,6 +67,13 @@ The result is saved per meeting (`Research` table) and used three ways:
 2. The recap prompt gets the roster and agenda. Claude replaces misheard names with the published spelling, lists each fix in `nameCorrections` (shown in the review email and under the recap), and uses agenda numbers when the transcript refers to an item. Votes and outcomes still come only from the transcript.
 3. News articles become a **Background from local news** section, each point linked to its article. Links are kept only when a search actually returned that URL, so the section can't cite an article that doesn't exist.
 
+Alongside the search, the app reads a few sources directly, so they don't depend on what search turns up:
+- **Official rosters**: the [Assembly](https://www.kgbak.us/173/Mayor-and-Assembly), [School Board](https://www.kgbsd.org/en-US/school-board) and [Planning Commission](https://www.kgbak.us/1175/Planning-Commission) pages and the [Borough staff directory](https://www.kgbak.us/directory.aspx). They are today's rosters, so they're used only for meetings from the last six months. After Claude writes the recap, any remaining near-miss of an Assembly, School Board or Planning Commission member's name ("Member Tab", "Bowling, Mattson…") is replaced with the roster spelling and added to `nameCorrections`. Staff names only help transcription and the prompt, because surnames like King or Lane would rewrite ordinary words.
+- **The agenda document**: the Granicus agenda PDF, or for the School Board, the agenda in the district's Google Drive meeting folder. Its text goes into the prompt as the authority for item titles, numbers and amounts. Reading PDFs needs `pdftotext` (`poppler-utils`, installed in the Docker image).
+- **News feeds**: KRBD search and Borough news releases near the meeting date, added to the articles Claude may cite.
+
+Each recap lists the rosters and agenda its names were checked against, on the page and in the email. On deploy, unsent drafts from the email window that were written before this check are rewritten with it; if the rewrite fails, the earlier draft stays.
+
 `KNOWN_NAMES="Jane Doe — Borough Clerk; …"` pins spellings the web gets wrong. Research failing never stops a meeting; it carries on without it and tries again next run. Coverage often appears days later: `POST /admin/meetings/:id/process?reanalyze=true` redoes the research and the recap (the transcript is reused). Set `RESEARCH_ENABLED=false` to turn it off.
 
 ## Admin endpoints (Bearer `ADMIN_TOKEN`)

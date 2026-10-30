@@ -188,12 +188,37 @@ export class DiscoveryService {
     return pending.length;
   }
 
+  /**
+   * Unsent drafts from the email window that predate the roster and agenda
+   * check are rewritten with it. Backfill drafts are left alone so a deploy
+   * doesn't pay to rewrite the whole archive.
+   */
+  async requeueOutdatedRecaps(): Promise<number> {
+    const rows = await this.prisma.meeting.findMany({
+      where: {
+        status: { in: ['AWAITING_APPROVAL', 'FAILED'] },
+        meetingDate: { gte: config.emailSince },
+        transcript: { isNot: null },
+        analysis: { is: { approvedAt: null } },
+      },
+      select: { id: true, meetingDate: true, analysis: { select: { data: true } } },
+    });
+    let n = 0;
+    for (const m of rows) {
+      const data = m.analysis?.data;
+      if (data && typeof data === 'object' && !Array.isArray(data) && 'checkedAgainst' in data) continue;
+      await this.enqueueProcess(m.id, m.meetingDate, { refreshRecap: true });
+      n++;
+    }
+    return n;
+  }
+
   /** Newer meetings run first, so a backfill never holds up this week's meeting. */
-  enqueueProcess(meetingId: string, meetingDate?: Date | null) {
+  enqueueProcess(meetingId: string, meetingDate?: Date | null, opts: { refreshRecap?: boolean } = {}) {
     const daysOld = meetingDate ? Math.max(0, Math.floor((Date.now() - meetingDate.getTime()) / 86_400_000)) : 0;
     return this.processQ.add(
       'process',
-      { meetingId },
+      { meetingId, ...opts },
       {
         jobId: `process-${meetingId}-${Date.now()}`,
         priority: Math.min(1 + daysOld, 2_000_000),

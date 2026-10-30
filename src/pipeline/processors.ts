@@ -32,8 +32,8 @@ export class ProcessProcessor extends WorkerHost {
   constructor(private pipeline: PipelineService) {
     super();
   }
-  async process(job: Job<{ meetingId: string }>) {
-    await this.pipeline.processMeeting(job.data.meetingId);
+  async process(job: Job<{ meetingId: string; refreshRecap?: boolean }>) {
+    await this.pipeline.processMeeting(job.data.meetingId, { refreshRecap: job.data.refreshRecap });
   }
 }
 
@@ -62,8 +62,9 @@ export class DiscoveryScheduler implements OnApplicationBootstrap {
     );
     await this.controlQ.add('discover', {}, { jobId: `discover-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
     const unfinished = (await this.discovery.requeueUnfinished()) + (await this.discovery.promoteSkipped());
+    const outdated = await this.discovery.requeueOutdatedRecaps();
     // Recaps written before topics existed (or while tagging failed) get tagged in the background.
     await this.controlQ.add('tag-topics', {}, { jobId: `tag-topics-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
-    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued.`);
+    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued. ${outdated} draft recap(s) queued to add the roster and agenda check.`);
   }
 }
