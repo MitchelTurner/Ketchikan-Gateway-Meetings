@@ -595,6 +595,7 @@ export function noteDetailPage(
   const upcoming = (d.upcoming ?? []).filter((x) => x && x.item);
   const background = (d.background ?? []).filter((x) => x && x.point);
   const fixes = (d.nameCorrections ?? []).filter((x) => x && x.heard && x.corrected);
+  const checked = (d.checkedAgainst ?? []).map((c) => `<a href="${esc(c.url)}">${esc(c.label)}</a>`);
   const sections = [
     String(d.summary ?? '')
       .split(/\n\s*\n/)
@@ -640,7 +641,7 @@ ${opts.banner ?? ''}<div class="kicker">${esc(placeBody(meeting.body))}</div>
 ${partsList(meeting.title, meeting.body)}
 <div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a>${opts.draft ? '' : `<a href="/notes">More recaps</a>`}</div>
 <div class="body">${sections}</div>
-<div class="notice"><strong>How this was made</strong>Written with AI from the Borough's recording and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
+<div class="notice"><strong>How this was made</strong>Written with AI from the Borough's recording and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
 ${opts.after ?? ''}
 </article></main>`,
     {

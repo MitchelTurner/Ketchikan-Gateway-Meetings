@@ -86,7 +86,11 @@ export function renderHtml(i: RenderInput): string {
   const caveat = [
     'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
     ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []),
-  ];
+    ...nameNotes(d),
+  ].map(esc);
+  const checked = rows(d.checkedAgainst).filter((c) => c.label && c.url);
+  if (checked.length)
+    caveat.push(`Names checked against the ${checked.map((c) => `<a href="${esc(c.url)}" style="color:${C.muted}">${esc(c.label)}</a>`).join(', ')}.`);
 
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light"><title>${esc(renderSubject(i))}</title></head>
 <body style="margin:0;padding:0;background:${C.bg};color:${C.ink};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px">
@@ -97,7 +101,7 @@ ${i.banner ?? ''}
 <h1 style="font-size:22px;line-height:1.3;margin:0 0 6px">${esc(d.headline)}</h1>
 <div style="font-size:14px;color:${C.muted};margin-bottom:22px">${esc(m.title)}${m.meetingDate ? ` · ${esc(formatDate(m.meetingDate))}` : ''} · <a href="${esc(m.sourceUrl)}" style="color:${C.accent}">Watch the meeting</a></div>
 ${sections.join('\n')}
-<div style="margin-top:28px;padding:12px 14px;background:${C.bg};border-radius:6px;font-size:13px;color:${C.muted};line-height:1.5">${caveat.map(esc).join('<br>')}</div>
+<div style="margin-top:28px;padding:12px 14px;background:${C.bg};border-radius:6px;font-size:13px;color:${C.muted};line-height:1.5">${caveat.join('<br>')}</div>
 </div>
 <div style="font-size:12px;color:${C.muted};text-align:center;line-height:1.6;margin-top:18px">
 Not an official Borough publication.<br>
@@ -121,7 +125,15 @@ export function renderText(i: RenderInput): string {
   sec('Public comment', comments.map((x) => `${x.who} on ${x.topic}: ${x.gist} [${hms(x.t)}]`));
   sec('Coming up', upcoming.map((x) => `${x.item}${x.when ? ` — ${x.when}` : ''}`));
   sec('Background from local news', background.map((x) => `${x.point} ${(x.sources ?? []).join(' ')}`));
-  out.push('Written by AI from an automated transcript; check the video before relying on it.', ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []), '');
+  out.push('Written by AI from an automated transcript; check the video before relying on it.', ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []), ...nameNotes(d));
+  const checked = rows(d.checkedAgainst).filter((c) => c.label && c.url);
+  if (checked.length) out.push(`Names checked against: ${checked.map((c) => `${c.label} (${c.url})`).join('; ')}.`);
+  out.push('');
   out.push(`Not an official Borough publication. Unsubscribe: ${i.unsubscribeUrl}`, i.mailingAddress);
   return out.join('\n');
+}
+
+function nameNotes(d: MeetingDigest): string[] {
+  const fixes = rows(d.nameCorrections).filter((f) => f.heard && f.corrected);
+  return fixes.length ? [`Names corrected from the transcript: ${fixes.map((f) => `"${f.heard}" → ${f.corrected}`).join(', ')}.`] : [];
 }
