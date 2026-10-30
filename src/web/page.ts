@@ -20,8 +20,8 @@ color-scheme:dark}
 --text:#0a0f14;--text-2:#3b4652;--muted:#67717d;--teal:#0f8f80;--green:#15803d;--indigo:#4f46e5;--violet:#7c3aed;--rose:#e11d48;
 --btn-bg:#0a0f14;--btn-text:#fff;--shadow:none;color-scheme:light}}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-bottom:88px}
-body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:12px}
+body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 a{color:inherit;text-decoration-color:var(--line-2);text-underline-offset:3px}
 a:hover{color:var(--teal);text-decoration-color:currentColor}
 ::selection{background:var(--teal);color:var(--bg)}
@@ -92,7 +92,8 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .hero .dek{max-width:38em;font-size:18.5px}
 .facts{margin:18px 0 0;font:400 14.5px/1.5 var(--sans);color:var(--muted)}
 .facts b{color:var(--text);font-weight:600}
-.signup{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;padding:28px 0 0;margin-top:32px;box-shadow:none}
+.signup{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;padding:28px 0 0;margin-top:32px;box-shadow:none;scroll-margin-top:16px}
+#docket,#how,#follow,#subscribe{scroll-margin-top:16px}
 .signup h2{font-size:20px;letter-spacing:-.02em;margin:0 0 6px}
 .signup p{font:400 15.5px/1.55 var(--sans);color:var(--text-2);margin:0}
 .signup p.hint{font-size:13px;color:var(--muted);margin:12px 0 0}
