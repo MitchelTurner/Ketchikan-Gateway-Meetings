@@ -1,7 +1,7 @@
 import { config } from '../config';
 import { sourceLabel, timestampUrl } from '../email/render';
 import { MeetingDigest } from '../analysis/analysis.service';
-import { BODIES, esc, formatDate, hms } from '../util';
+import { BODIES, esc, formatDate, hms, meetingParts } from '../util';
 
 /** Minimal light-only page shell for the public signup, search, and account screens. */
 export function page(title: string, inner: string, wide = false, below = ''): string {
@@ -31,6 +31,13 @@ button:hover{filter:brightness(1.08)}
 .hit p{margin:0;color:var(--muted);font-size:14px}
 .hit a{color:var(--accent)}
 .kicker{font-size:13px;color:var(--muted)}
+.row-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pill{flex:none;font-size:12px;font-weight:600;line-height:1;padding:5px 9px;border-radius:999px;white-space:nowrap}
+.pill.work{background:#e6f1f5;color:#0b5d7a}.pill.ready{background:#e7f4ea;color:#1d6b33}
+.pill.done{background:#eef0f3;color:#3d4653}.pill.stopped{background:#fbeceb;color:#9a2f24}
+.parts{margin:0 0 6px;padding:0;list-style:none;font-size:14px;color:var(--muted)}
+.parts li{margin:0}
+.hit p.headline{color:var(--ink);font-size:15px}
 mark{background:#fff3c4;padding:0 2px;border-radius:2px}
 .note h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:28px 0 10px;font-weight:600}
 .note ul{padding-left:18px;margin:0}.note li{margin:0 0 10px}
@@ -109,24 +116,44 @@ export function hitList(hits: NoteHit[]): string {
   if (!hits.length) return '';
   return `<div class="hits">${hits
     .map(
-      (h) => `<a class="hit" href="/notes/${esc(h.id)}"><div class="kicker">${esc(h.body)}${h.date ? ` · ${esc(h.date)}` : ''}</div><h2>${esc(h.headline)}</h2><p>${h.snippet}</p></a>`,
+      (h) => `<a class="hit" href="/notes/${esc(h.id)}"><div class="kicker">${esc(h.date || 'Date unknown')} · ${esc(h.body)}</div><h2>${esc(h.headline)}</h2><p>${h.snippet}</p></a>`,
     )
     .join('')}</div>`;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  DISCOVERED: 'Found — waiting to download',
-  RESEARCHING: 'Looking up the agenda and news coverage',
-  DOWNLOADING: 'Downloading audio',
-  TRANSCRIBING: 'Transcribing',
-  ANALYZING: 'Writing the recap',
-  AWAITING_APPROVAL: 'Transcript ready',
-  SENDING: 'Emailing subscribers',
-  SENT: 'Emailed',
-  PUBLISHED: 'Published (older meeting, not emailed)',
-  FAILED: 'Stopped before it finished',
-  SKIPPED: 'Older than the transcription window',
+// Short labels in one voice; the tone picks the pill color.
+const STATUS: Record<string, { label: string; tone: 'work' | 'ready' | 'done' | 'stopped' }> = {
+  DISCOVERED: { label: 'Queued', tone: 'work' },
+  RESEARCHING: { label: 'Researching', tone: 'work' },
+  DOWNLOADING: { label: 'Downloading', tone: 'work' },
+  TRANSCRIBING: { label: 'Transcribing', tone: 'work' },
+  ANALYZING: { label: 'Writing recap', tone: 'work' },
+  AWAITING_APPROVAL: { label: 'Draft ready', tone: 'ready' },
+  SENDING: { label: 'Emailing', tone: 'done' },
+  SENT: { label: 'Emailed', tone: 'done' },
+  PUBLISHED: { label: 'Published', tone: 'done' },
+  FAILED: { label: 'Not finished', tone: 'stopped' },
+  SKIPPED: { label: 'Not transcribed', tone: 'done' },
 };
+
+function pill(status: string): string {
+  const s = STATUS[status] ?? { label: status, tone: 'done' as const };
+  return `<span class="pill ${s.tone}">${esc(s.label)}</span>`;
+}
+
+/** What a resident sees about a meeting's state. Internal errors stay on the admin pages. */
+function publicStatusNote(status: string, hasDigest: boolean, approved: boolean): string {
+  if (status === 'FAILED') return "Processing stopped before it finished. It's retried automatically.";
+  if (hasDigest && !approved) return 'Draft recap. It has not been reviewed yet.';
+  if (STATUS[status]?.tone === 'work') return 'This page fills in when transcription finishes.';
+  return '';
+}
+
+/** Agenda-style items from the archive title, beyond the body name and date. */
+function partsList(title: string, body: string): string {
+  const parts = meetingParts(title, body);
+  return parts.length ? `<ul class="parts">${parts.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : '';
+}
 
 export interface WorkHit {
   id: string;
@@ -134,22 +161,22 @@ export interface WorkHit {
   body: string;
   date: string;
   status: string;
-  detail: string;
+  /** The recap headline, once there is one. */
+  headline: string;
 }
 
 export function workList(hits: WorkHit[]): string {
   if (!hits.length) return '';
   return `<div class="hits">${hits
     .map((h) => {
-      const label = STATUS_LABEL[h.status] || h.status;
-      return `<a class="hit" href="/meetings/${esc(h.id)}"><div class="kicker">${esc(h.body)}${h.date ? ` · ${esc(h.date)}` : ''} · ${esc(label)}</div><h2>${esc(h.title)}</h2>${h.detail ? `<p>${esc(h.detail)}</p>` : ''}</a>`;
+      return `<a class="hit" href="/meetings/${esc(h.id)}"><div class="row-top"><span class="kicker">${esc(h.date || 'Date unknown')}</span>${pill(h.status)}</div><h2>${esc(h.body)}</h2>${partsList(h.title, h.body)}${h.headline ? `<p class="headline">${esc(h.headline)}</p>` : ''}</a>`;
     })
     .join('')}</div>`;
 }
 
 export function archiveCard(work: WorkHit[], archiveCount: number, sinceLabel: string): string {
   const intro = archiveCount
-    ? `${archiveCount.toLocaleString('en-US')} clips found on the Borough video archive. Meetings on or after ${esc(sinceLabel)} are downloaded and transcribed.`
+    ? `${archiveCount.toLocaleString('en-US')} meetings on the Borough video archive. Everything since ${esc(sinceLabel)} is transcribed, newest first.`
     : 'No clips recorded yet. The archive is checked when the server starts, then every few hours. Refresh in a minute.';
   const list = work.length
     ? workList(work)
@@ -224,17 +251,17 @@ export function meetingPage(
   approved: boolean,
   segments: { start?: number; speaker?: string; text?: string }[],
 ): string {
-  const status = STATUS_LABEL[meeting.status] || meeting.status;
-  const banner = `<p class="kicker">${esc(status)}</p>${meeting.error ? `<p>${esc(meeting.error)}</p>` : ''}${digest && !approved ? '<p class="muted">Draft recap — not emailed yet.</p>' : ''}`;
+  const note = publicStatusNote(meeting.status, Boolean(digest), approved);
+  const banner = `<div class="row-top" style="margin-bottom:10px">${pill(meeting.status)}</div>${note ? `<p class="muted">${esc(note)}</p>` : ''}`;
   const transcript = transcriptHtml(segments);
   if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, backHref: '/', backLabel: 'Home' });
   return page(
-    meeting.title,
-    `<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>
-<h1>${esc(meeting.title)}</h1>
-${banner}
+    `${meeting.body} · ${formatDate(meeting.meetingDate)}`,
+    `${banner}<div class="kicker">${esc(formatDate(meeting.meetingDate) || 'Date unknown')}</div>
+<h1>${esc(meeting.body)}</h1>
+${partsList(meeting.title, meeting.body)}
 <p class="muted"><a href="${esc(meeting.sourceUrl)}">Watch the meeting</a></p>
-${transcript || '<p>No transcript yet. This page updates when transcription finishes.</p>'}
+${transcript || '<p class="muted">No transcript yet.</p>'}
 <p style="margin-top:18px"><a href="/">Home</a></p>`,
     true,
   );
@@ -290,7 +317,7 @@ export function noteDetailPage(
     d.headline,
     `<div class="note">${opts.banner ?? ''}<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>
 <h1>${esc(d.headline)}</h1>
-<p class="muted">${esc(meeting.title)} · <a href="${esc(meeting.sourceUrl)}">Watch the meeting</a></p>
+${partsList(meeting.title, meeting.body)}<p class="muted"><a href="${esc(meeting.sourceUrl)}">Watch the meeting</a></p>
 ${sections}
 <div class="caveat">${caveats.map(esc).join('<br>')}</div>
 ${opts.after ?? ''}

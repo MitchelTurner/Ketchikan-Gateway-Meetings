@@ -4,7 +4,7 @@ import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
-import { BODIES, esc, formatDate, randomToken } from '../util';
+import { BODIES, esc, randomToken, shortDate } from '../util';
 import { bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
@@ -29,7 +29,7 @@ export class PublicController {
       this.workHits(),
       this.prisma.meeting.count(),
     ]);
-    return signupPage(recent, work, archiveCount, formatDate(config.processSince) || 'the last two weeks');
+    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks');
   }
 
   /** Published recaps — the same notes subscribers get by email, after review. Newest first. */
@@ -55,9 +55,9 @@ export class PublicController {
         id: m.id,
         title: m.title,
         body: m.body,
-        date: formatDate(m.meetingDate),
+        date: shortDate(m.meetingDate),
         status: m.status,
-        detail: m.error || digest?.headline || (m.transcript ? 'Transcript is ready to read' : ''),
+        headline: digest?.headline ?? '',
       };
     });
   }
@@ -94,7 +94,7 @@ export class PublicController {
         id: m.id,
         title: m.title,
         body: m.body,
-        date: formatDate(m.meetingDate),
+        date: shortDate(m.meetingDate),
         headline: digest.headline,
         snippet: snippet(query ? plain : digest.summary, query),
       });
