@@ -2,8 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
 import { config } from '../config';
 import { Agenda, fetchAgenda } from '../enrichment/agenda';
-import { correctNames, loadRoster, Person } from '../enrichment/names';
-import { findLocalNews, leadSentence, NewsArticle } from '../enrichment/news';
+import { correctNames, loadRoster, officials, Person, ROSTER_SOURCES } from '../enrichment/names';
+import { findBackground, findLocalNews, leadSentence, NewsArticle } from '../enrichment/news';
 import { formatTranscript, Segment } from '../transcription/transcription.service';
 import { formatDate } from '../util';
 
@@ -14,6 +14,18 @@ export interface NewsNote {
   note: string;
 }
 
+export interface SourceLink {
+  label: string;
+  url: string;
+}
+
+export interface BackgroundLink {
+  outlet: string;
+  title: string;
+  url: string;
+  date: string;
+}
+
 export interface MeetingDigest {
   headline: string;
   summary: string;
@@ -22,6 +34,11 @@ export interface MeetingDigest {
   publicComment: { who: string; topic: string; gist: string; t: number }[];
   upcoming: { item: string; when?: string }[];
   news: NewsNote[];
+  /** Short subject phrases ("Herring Cove", "Ordinance 2123") used to look up background and earlier recaps. */
+  topics: string[];
+  background: { topic: string; links: BackgroundLink[] }[];
+  /** What the names were checked against and what changed. Absent on recaps written before the check existed. */
+  factCheck?: { corrections: string[]; sources: SourceLink[] };
   caveats: string[];
 }
 
@@ -33,6 +50,7 @@ You work from the automated transcript. A roster of official spellings and, when
 - The agenda is the official list of what was scheduled. Use it for exact item titles, ordinance and resolution numbers, dollar amounts, and the names of people and businesses in an item. It does not say what passed: outcomes and votes come from the transcript only.
 - Local news may correct a garbled name or number and may add a short fact the audio left unclear. When you use a news fact, name the outlet in the sentence. If news and the transcript disagree, keep the transcript and say so in caveats. Do not add facts that are in none of the transcript, agenda, or excerpts.
 - Each news article you actually used goes in "news" with the outlet, title, the excerpt URL, and a one-sentence note. Leave "news" empty if you used none. Do not list the agenda there; it is linked separately.
+- "topics": 2 to 5 of the meeting's main subjects as short search phrases a local news site would use: a place, project, ordinance or resolution number, or organization ("Herring Cove", "Ordinance 2123", "Ward Cove landslide"). Not generic words like "budget" or "public comment", and not people's names.
 - If a vote count, motion outcome, or dollar figure is unclear, say so plainly rather than guessing, and add a caveat.
 - Every item gets "t": the start time in seconds of the transcript line where it happens, copied from the [Ns] markers.
 - Write in plain language a busy resident can skim. No jargon without a short explanation.
@@ -111,9 +129,14 @@ const DIGEST_FORMAT: Anthropic.JSONOutputFormat = {
           ['outlet', 'title', 'url', 'note'],
         ),
       },
+      topics: {
+        type: 'array',
+        description: '2 to 5 short search phrases for the main subjects: places, projects, ordinance numbers, organizations.',
+        items: { type: 'string' },
+      },
       caveats: { type: 'array', items: { type: 'string' }, description: 'Audio gaps, unclear votes, likely misheard names, disagreements with news.' },
     },
-    ['headline', 'summary', 'actions', 'discussion', 'publicComment', 'upcoming', 'news', 'caveats'],
+    ['headline', 'summary', 'actions', 'discussion', 'publicComment', 'upcoming', 'news', 'topics', 'caveats'],
   ),
 };
 
@@ -142,7 +165,7 @@ export class AnalysisService {
         meetingDate: meeting.meetingDate,
         userAgent: config.userAgent,
       }),
-      fetchAgenda(meeting.sourceUrl, config.userAgent).catch((err: Error) => {
+      fetchAgenda(meeting, config.userAgent).catch((err: Error) => {
         this.log.warn(`Agenda fetch failed: ${err.message}`);
         return null;
       }),
@@ -188,19 +211,39 @@ export class AnalysisService {
         note: leadSentence(a.excerpt),
       }));
     }
+    const agendaOwner = meeting.body === 'School Board' && !agenda?.url.includes('granicus.com') ? 'School District' : 'Borough';
     if (agenda) {
       digest.news.unshift({
-        outlet: 'Borough agenda',
-        title: 'Published agenda and packet for this meeting',
+        outlet: `${agendaOwner} agenda`,
+        title: 'Published agenda for this meeting',
         url: agenda.url,
-        note: 'The official item list, with ordinance numbers, amounts and staff memos.',
+        note: 'The official item list, with item titles, ordinance numbers and amounts.',
       });
     }
-    // Only the official rosters rewrite names here. Agenda and news spellings reach Claude through the prompt.
-    const named = applyNames(digest, roster);
-    if (named.changes.length) {
-      named.digest.caveats.push(`Names corrected to the official Borough and School Board rosters: ${named.changes.join('; ')}.`);
-    }
+
+    const background = await findBackground({
+      topics: digest.topics,
+      meetingDate: meeting.meetingDate,
+      exclude: new Set(digest.news.map((n) => n.url)),
+      userAgent: config.userAgent,
+    }).catch((err: Error) => {
+      this.log.warn(`Background search failed: ${err.message}`);
+      return [];
+    });
+    digest.background = background.map((b) => ({
+      topic: b.topic,
+      links: b.articles.map((a) => ({ outlet: a.outlet, title: a.title, url: a.url, date: a.published ? formatDate(a.published) : '' })),
+    }));
+
+    // Only elected and appointed members are rewritten here. Staff, agenda and news spellings reach Claude through the prompt.
+    const named = applyNames(digest, officials(roster));
+    named.digest.factCheck = {
+      corrections: named.changes,
+      sources: [
+        ...ROSTER_SOURCES.map((s) => ({ label: `${s.label} roster`, url: s.url })),
+        ...(agenda ? [{ label: `${agendaOwner} agenda for this meeting`, url: agenda.url }] : []),
+      ],
+    };
     return named.digest;
   }
 }
@@ -213,7 +256,11 @@ export interface MeetingInfo {
 }
 
 function userPrompt(meeting: MeetingInfo, transcript: string, people: Person[], agenda: Agenda | null, articles: NewsArticle[]): string {
-  const roster = people.length ? people.map((p) => `- ${p.full}`).join('\n') : 'No official roster could be loaded.';
+  const list = (group: Person[]) => group.map((p) => `- ${p.full}`).join('\n');
+  const staff = people.filter((p) => p.group === 'staff');
+  const roster = people.length
+    ? `Elected and appointed members:\n${list(officials(people))}${staff.length ? `\n\nBorough staff:\n${list(staff)}` : ''}`
+    : 'No official roster could be loaded.';
   const agendaText = agenda ? `Source: ${agenda.url}\n${agenda.text}` : 'No published agenda was found for this meeting.';
   const coverage = articles.length
     ? articles
@@ -243,6 +290,8 @@ function applyNames(d: MeetingDigest, people: Person[]): { digest: MeetingDigest
       publicComment: d.publicComment.map((x) => ({ ...x, who: fix(x.who), topic: fix(x.topic), gist: fix(x.gist) })),
       upcoming: d.upcoming.map((x) => ({ ...x, item: fix(x.item), ...(x.when ? { when: fix(x.when) } : {}) })),
       news: d.news.map((n) => ({ ...n, note: fix(n.note) })),
+      topics: d.topics,
+      background: d.background,
       caveats: d.caveats.map(fix),
     },
   };
@@ -280,8 +329,31 @@ export function normalizeDigest(data: unknown): MeetingDigest | null {
     news: records(d.news)
       .map((n) => ({ outlet: text(n.outlet) || 'Local news', title: text(n.title), url: text(n.url), note: text(n.note) }))
       .filter((n) => n.title && n.url.startsWith('http') && n.note),
+    topics: Array.isArray(d.topics) ? [...new Set(d.topics.map(text).filter((t) => t.length >= 3 && t.length <= 60))].slice(0, 5) : [],
+    background: records(d.background)
+      .map((b) => ({
+        topic: text(b.topic),
+        links: records(b.links)
+          .map((l) => ({ outlet: text(l.outlet) || 'Local news', title: text(l.title), url: text(l.url), date: text(l.date) }))
+          .filter((l) => l.title && l.url.startsWith('http')),
+      }))
+      .filter((b) => b.topic && b.links.length),
+    ...(d.factCheck && typeof d.factCheck === 'object' && !Array.isArray(d.factCheck)
+      ? {
+          factCheck: {
+            corrections: arr((d.factCheck as Record<string, unknown>).corrections).map(text).filter(Boolean),
+            sources: records((d.factCheck as Record<string, unknown>).sources)
+              .map((s) => ({ label: text(s.label), url: text(s.url) }))
+              .filter((s) => s.label && s.url.startsWith('http')),
+          },
+        }
+      : {}),
     caveats: Array.isArray(d.caveats) ? d.caveats.map(text).filter(Boolean) : [],
   };
+}
+
+function arr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
 }
 
 function text(v: unknown): string {

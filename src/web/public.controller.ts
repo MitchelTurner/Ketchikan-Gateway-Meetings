@@ -5,7 +5,7 @@ import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
 import { BODIES, esc, formatDate, randomToken } from '../util';
-import { bodyCheckboxes, meetingPage, meetingsArchivePage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
+import { bodyCheckboxes, EarlierRecaps, meetingPage, meetingsArchivePage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -108,7 +108,44 @@ export class PublicController {
     const segments = Array.isArray(m.transcript?.segments)
       ? (m.transcript.segments as { start?: number; speaker?: string; text?: string }[])
       : [];
-    return meetingPage(m, normalizeDigest(m.analysis?.data), Boolean(m.analysis?.approvedAt), segments);
+    const digest = normalizeDigest(m.analysis?.data);
+    const earlier = digest ? await this.earlierRecaps(m, digest, false) : [];
+    return meetingPage(m, digest, Boolean(m.analysis?.approvedAt), segments, earlier);
+  }
+
+  /** Recaps of earlier meetings whose text mentions one of this recap's topics. */
+  private async earlierRecaps(
+    m: { id: string; meetingDate: Date | null },
+    d: MeetingDigest,
+    publishedOnly: boolean,
+  ): Promise<EarlierRecaps> {
+    if (!m.meetingDate || !d.topics.length) return [];
+    const rows = await this.prisma.meeting.findMany({
+      where: {
+        id: { not: m.id },
+        meetingDate: { lt: m.meetingDate },
+        analysis: publishedOnly ? { is: { approvedAt: { not: null } } } : { isNot: null },
+      },
+      include: { analysis: true },
+      orderBy: { meetingDate: 'desc' },
+      take: 300,
+    });
+    const notes = rows.flatMap((r) => {
+      const digest = normalizeDigest(r.analysis?.data);
+      return digest ? [{ r, digest, plain: notePlain(r.title, r.body, digest).toLowerCase() }] : [];
+    });
+    return d.topics
+      .map((topic) => ({
+        topic,
+        links: notes
+          .filter((n) => n.plain.includes(topic.toLowerCase()))
+          .slice(0, 3)
+          .map((n) => ({
+            href: publishedOnly ? `/notes/${n.r.id}` : `/meetings/${n.r.id}`,
+            label: `${n.r.body}, ${formatDate(n.r.meetingDate)}: ${n.digest.headline}`,
+          })),
+      }))
+      .filter((e) => e.links.length);
   }
 
   /** Approved recaps, newest meeting date first. A query searches within that order. */
@@ -149,7 +186,7 @@ export class PublicController {
     if (!m || !digest) {
       return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here after they've been reviewed and emailed. <a href="/notes">Back to search</a>.</p>`);
     }
-    return noteDetailPage(m, digest);
+    return noteDetailPage(m, digest, { earlier: await this.earlierRecaps(m, digest, true) });
   }
 
   /**
@@ -246,6 +283,8 @@ function notePlain(title: string, body: string, d: MeetingDigest): string {
     ...(d.publicComment ?? []).flatMap((x) => (x ? [x.who, x.topic, x.gist] : [])),
     ...(d.upcoming ?? []).flatMap((x) => (x ? [x.item, x.when] : [])),
     ...(d.news ?? []).flatMap((n) => (n ? [n.outlet, n.title, n.note] : [])),
+    ...(d.topics ?? []),
+    ...(d.background ?? []).flatMap((b) => b.links.map((l) => l.title)),
     ...(d.caveats ?? []),
   ]
     .filter((s) => typeof s === 'string' && s)

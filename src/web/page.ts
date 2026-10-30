@@ -219,11 +219,12 @@ export function meetingPage(
   digest: MeetingDigest | null,
   approved: boolean,
   segments: { start?: number; speaker?: string; text?: string }[],
+  earlier: EarlierRecaps = [],
 ): string {
   const status = STATUS_LABEL[meeting.status] || meeting.status;
   const banner = `<p class="kicker">${esc(status)}</p>${meeting.error ? `<p>${esc(meeting.error)}</p>` : ''}${digest && !approved ? '<p class="muted">Draft recap — not emailed yet.</p>' : ''}`;
   const transcript = transcriptHtml(segments);
-  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, backHref: '/meetings', backLabel: 'All meetings' });
+  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, backHref: '/meetings', backLabel: 'All meetings', earlier });
   const waiting =
     meeting.status === 'SKIPPED'
       ? '<p>This meeting is on the Borough video archive. Transcripts are made for meetings inside the current window.</p>'
@@ -282,7 +283,7 @@ ${list}${pager}`,
 export function noteDetailPage(
   meeting: { id: string; title: string; body: string; meetingDate: Date | null; sourceUrl: string; platform: string },
   d: MeetingDigest,
-  opts: { banner?: string; after?: string; backHref?: string; backLabel?: string } = {},
+  opts: { banner?: string; after?: string; backHref?: string; backLabel?: string; earlier?: EarlierRecaps } = {},
 ): string {
   const ts = (t: number) =>
     `<a href="${esc(timestampUrl(meeting.sourceUrl, meeting.platform, t))}">${hms(t)}</a>`;
@@ -319,6 +320,7 @@ export function noteDetailPage(
             .map((n) => `<a href="${esc(n.url)}">${esc(n.outlet || 'Local news')}: ${esc(n.title)}</a>${n.note ? ` — ${esc(n.note)}` : ''}`),
         )
       : '',
+    backgroundHtml(d, opts.earlier ?? []),
   ].join('');
   const caveats = [
     'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
@@ -329,10 +331,41 @@ export function noteDetailPage(
     `<div class="note">${opts.banner ?? ''}<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>
 <h1>${esc(d.headline)}</h1>
 <p class="muted">${esc(meeting.title)} · <a href="${esc(meeting.sourceUrl)}">Watch the meeting</a></p>
+${factCheckHtml(d)}
 ${sections}
 <div class="caveat">${caveats.map(esc).join('<br>')}</div>
 ${opts.after ?? ''}
 <p style="margin-top:18px"><a href="${esc(opts.backHref ?? '/notes')}">${esc(opts.backLabel ?? 'All notes')}</a></p></div>`,
     true,
   );
+}
+
+/** Earlier recaps that mention one of this recap's topics, found when the page is rendered. */
+export type EarlierRecaps = { topic: string; links: { href: string; label: string }[] }[];
+
+function factCheckHtml(d: MeetingDigest): string {
+  const fc = d.factCheck;
+  if (!fc) return '';
+  const sources = fc.sources.map((s) => `<a href="${esc(s.url)}">${esc(s.label)}</a>`);
+  const checked = sources.length ? `Names checked against the ${sources.join(', ')}.` : 'Names checked against the official rosters.';
+  const fixed = fc.corrections.length
+    ? ` Spellings corrected from the transcript: ${fc.corrections.map(esc).join(', ')}.`
+    : ' No spellings needed correcting.';
+  return `<p class="muted" style="font-size:13px">${checked}${fixed}</p>`;
+}
+
+function backgroundHtml(d: MeetingDigest, earlier: EarlierRecaps): string {
+  const topics = [...new Set([...d.background.map((b) => b.topic), ...earlier.map((e) => e.topic)])];
+  const blocks = topics
+    .map((topic) => {
+      const recaps = earlier.find((e) => e.topic === topic)?.links ?? [];
+      const news = d.background.find((b) => b.topic === topic)?.links ?? [];
+      const items = [
+        ...recaps.map((r) => `<a href="${esc(r.href)}">Earlier recap: ${esc(r.label)}</a>`),
+        ...news.map((l) => `<a href="${esc(l.url)}">${esc(l.outlet)}${l.date ? `, ${esc(l.date)}` : ''}: ${esc(l.title)}</a>`),
+      ];
+      return items.length ? `<p style="margin-bottom:4px"><strong>${esc(topic)}</strong></p><ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>` : '';
+    })
+    .filter(Boolean);
+  return blocks.length ? `<h2>Background</h2>${blocks.join('')}` : '';
 }

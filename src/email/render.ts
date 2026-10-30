@@ -69,6 +69,28 @@ export function renderHtml(i: RenderInput): string {
       h2('Local coverage') +
         list(news.map((n) => li(`<a href="${esc(n.url)}" style="color:${C.accent}">${esc(n.outlet || 'Local news')}: ${esc(n.title)}</a> — ${esc(n.note)}`))),
     );
+  const background = rows(d.background).filter((b) => b.topic && rows(b.links).length);
+  if (background.length)
+    sections.push(
+      h2('Background') +
+        background
+          .map(
+            (b) =>
+              `<p style="margin:0 0 6px;font-weight:600">${esc(b.topic)}</p>` +
+              list(
+                rows(b.links).map((l) =>
+                  li(`<a href="${esc(l.url)}" style="color:${C.accent}">${esc(l.outlet)}${l.date ? `, ${esc(l.date)}` : ''}: ${esc(l.title)}</a>`),
+                ),
+              ),
+          )
+          .join(''),
+    );
+  const fc = d.factCheck;
+  const factCheck = fc
+    ? `<div style="font-size:13px;color:${C.muted};margin:-12px 0 22px;line-height:1.5">Names checked against the ${
+        fc.sources.length ? fc.sources.map((s) => `<a href="${esc(s.url)}" style="color:${C.muted}">${esc(s.label)}</a>`).join(', ') : 'official rosters'
+      }.${fc.corrections.length ? ` Spellings corrected from the transcript: ${fc.corrections.map(esc).join(', ')}.` : ' No spellings needed correcting.'}</div>`
+    : '';
 
   const caveat = [
     'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
@@ -83,6 +105,7 @@ ${i.banner ?? ''}
 <div style="font-size:13px;color:${C.muted};margin-bottom:6px">${esc(i.newsletterName)} · ${esc(m.body)}</div>
 <h1 style="font-size:22px;line-height:1.3;margin:0 0 6px">${esc(d.headline)}</h1>
 <div style="font-size:14px;color:${C.muted};margin-bottom:22px">${esc(m.title)}${m.meetingDate ? ` · ${esc(formatDate(m.meetingDate))}` : ''} · <a href="${esc(m.sourceUrl)}" style="color:${C.accent}">Watch the meeting</a></div>
+${factCheck}
 ${sections.join('\n')}
 <div style="margin-top:28px;padding:12px 14px;background:${C.bg};border-radius:6px;font-size:13px;color:${C.muted};line-height:1.5">${caveat.map(esc).join('<br>')}</div>
 </div>
@@ -112,6 +135,16 @@ export function renderText(i: RenderInput): string {
       .filter((n) => n.title && n.url)
       .map((n) => `${n.outlet}: ${n.title} — ${n.note} (${n.url})`),
   );
+  sec(
+    'Background',
+    rows(d.background).flatMap((b) => rows(b.links).map((l) => `${b.topic} — ${l.outlet}${l.date ? `, ${l.date}` : ''}: ${l.title} (${l.url})`)),
+  );
+  if (d.factCheck)
+    out.push(
+      `Names checked against: ${d.factCheck.sources.map((s) => `${s.label} (${s.url})`).join('; ') || 'official rosters'}.`,
+      d.factCheck.corrections.length ? `Spellings corrected from the transcript: ${d.factCheck.corrections.join(', ')}.` : 'No spellings needed correcting.',
+      '',
+    );
   out.push('Written by AI from an automated transcript; check the video before relying on it.', ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []), '');
   out.push(`Not an official Borough publication. Unsubscribe: ${i.unsubscribeUrl}`, i.mailingAddress);
   return out.join('\n');
