@@ -13,6 +13,12 @@ export interface MeetingContext {
   terms: string[];
   /** News coverage. Every URL here was returned by a search or fetch in this run. */
   articles: { title: string; url: string; outlet: string; date: string; summary: string }[];
+  /** Text of the published agenda document, read directly rather than through search. */
+  agendaDoc?: { label: string; url: string; text: string };
+  /** Elected and appointed members from the official rosters; their spellings are enforced in the recap. */
+  officials?: string[];
+  /** The rosters and agenda the names were checked against. */
+  checked?: { label: string; url: string }[];
 }
 
 const SYSTEM = `You research a Ketchikan Gateway Borough public meeting so that an automated transcript of it can be checked and put in context.
@@ -179,6 +185,7 @@ export function formatContext(ctx: MeetingContext): string {
   const out: string[] = [];
   if (ctx.people.length) out.push('People (official spellings):', ...ctx.people.map((p) => `- ${p.name}${p.role ? ` — ${p.role}` : ''}`), '');
   if (ctx.agenda.length) out.push('Agenda:', ...ctx.agenda.map((a) => `- ${a}`), '');
+  if (ctx.agendaDoc) out.push(`Published agenda document (${ctx.agendaDoc.url}):`, ctx.agendaDoc.text, '');
   if (ctx.terms.length) out.push(`Local terms: ${ctx.terms.join(', ')}`, '');
   if (ctx.articles.length)
     out.push(

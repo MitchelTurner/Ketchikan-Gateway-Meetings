@@ -9,6 +9,7 @@ import { AnalysisService, normalizeDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { renderHtml, renderSubject, renderText, RenderInput } from '../email/render';
+import { withPublishedSources } from '../enrichment/context';
 import { MediaService } from '../media/media.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL, Q_EMAIL } from '../queues';
@@ -41,7 +42,7 @@ export class PipelineService {
   ) {}
 
   /** research → download → transcribe → analyze → (approval email | deliver). Each stage is skipped if already done. */
-  async processMeeting(meetingId: string) {
+  async processMeeting(meetingId: string, opts: { refreshRecap?: boolean } = {}) {
     const meeting = await this.prisma.meeting.findUniqueOrThrow({
       where: { id: meetingId },
       include: { research: true, transcript: true, analysis: true },
@@ -49,8 +50,14 @@ export class PipelineService {
     if (['SENDING', 'SENT', 'PUBLISHED'].includes(meeting.status)) return;
 
     try {
+      // A refresh rewrites an unsent draft with the current sources; a sent recap stays as mailed.
+      const redo = !!opts.refreshRecap && !!meeting.analysis && !meeting.analysis.approvedAt;
       let context = meeting.research ? normalizeContext(meeting.research.data) : null;
-      if (!context && !meeting.analysis && config.researchEnabled) context = await this.runResearch(meeting);
+      if (!context && (!meeting.analysis || redo) && config.researchEnabled) context = await this.runResearch(meeting);
+      if (!meeting.transcript || !meeting.analysis || redo) {
+        context ??= config.knownNames.length ? { people: config.knownNames, agenda: [], terms: [], articles: [] } : null;
+        context = await withPublishedSources(meeting, context, config.userAgent);
+      }
 
       let segments = meeting.transcript?.segments as Segment[] | undefined;
       if (!segments) {
@@ -78,6 +85,20 @@ export class PipelineService {
         await this.setStatus(meetingId, 'ANALYZING');
         const digest = await this.analysis.analyze(meeting, segments, context);
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
+      } else if (redo) {
+        await this.setStatus(meetingId, 'ANALYZING');
+        try {
+          const digest = await this.analysis.analyze(meeting, segments, context);
+          await this.prisma.analysis.update({ where: { meetingId }, data: { model: this.analysis.model, data: digest as any } });
+        } catch (err) {
+          // The earlier draft stays up; the next deploy tries again.
+          this.log.warn(`${meetingId}: recap refresh failed, keeping the earlier draft: ${(err as Error).message}`);
+          await this.prisma.meeting.update({
+            where: { id: meetingId },
+            data: { status: 'AWAITING_APPROVAL', error: `Recap refresh failed, showing the earlier draft: ${(err as Error).message}`.slice(0, 2000) },
+          });
+          return;
+        }
       }
 
       // Topics are extra: a failure is logged and retried by the next tag-topics run.

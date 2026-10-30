@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable } from '@nestjs/common';
 import { config } from '../config';
+import { correctNames, NameFix, peopleFromNames, Person } from '../enrichment/names';
 import { formatContext, MeetingContext } from '../research/research.service';
 import { formatTranscript, Segment } from '../transcription/transcription.service';
 import { formatDate } from '../util';
@@ -16,6 +17,8 @@ export interface MeetingDigest {
   background: { point: string; sources: string[] }[];
   /** Transcript spellings replaced with the published spelling. */
   nameCorrections: { heard: string; corrected: string }[];
+  /** Rosters and agenda the names were checked against. Missing on recaps written before that check. */
+  checkedAgainst?: { label: string; url: string }[];
   caveats: string[];
 }
 
@@ -32,7 +35,7 @@ You work only from the automated transcript provided. Rules:
 
 You may also get <reference> material gathered from the web: the official roster, the agenda, and news articles.
 - Names: the transcription often misspells names. When a transcript name sounds like a roster name and the role fits (e.g. the transcript has "Member Jonsen" and the roster lists Assembly Member "Johnson"), use the roster spelling and list it in nameCorrections. Do not attach a name to a statement just because the roster has it; the transcript must still show who is speaking.
-- Agenda: use it to get ordinance/resolution numbers and item titles right when the transcript clearly refers to that item. Outcomes and votes come only from the transcript.
+- Agenda: use it to get ordinance/resolution numbers and item titles right when the transcript clearly refers to that item. When the text of the published agenda document is included, it is the authority for titles, numbers and amounts. Outcomes and votes come only from the transcript.
 - News: put useful context from the articles in "background", one point per item, each citing the article URL(s) it came from, exactly as listed. Never present something from an article as having been said or decided at this meeting. If an article contradicts the transcript, say so in caveats.`;
 
 // Sonnet 5.5 rejects tool_choice "tool" and "any". A JSON schema response is the
@@ -168,8 +171,40 @@ export class AnalysisService {
     digest.background = digest.background
       .map((b) => ({ ...b, sources: b.sources.filter((u) => known.has(u)) }))
       .filter((b) => b.sources.length);
-    return digest;
+    if (!context?.checked) return digest;
+    // Roster spellings are enforced even where Claude kept the transcript's spelling.
+    const fixed = context.officials?.length ? applyNames(digest, peopleFromNames(context.officials)) : digest;
+    fixed.checkedAgainst = context.checked;
+    return fixed;
   }
+}
+
+function applyNames(d: MeetingDigest, people: Person[]): MeetingDigest {
+  const fixes: NameFix[] = [];
+  const fix = (s: string) => {
+    const r = correctNames(s, people);
+    fixes.push(...r.changes);
+    return r.text;
+  };
+  const out: MeetingDigest = {
+    ...d,
+    headline: fix(d.headline),
+    summary: fix(d.summary),
+    actions: d.actions.map((a) => ({ ...a, item: fix(a.item), outcome: fix(a.outcome), ...(a.vote ? { vote: fix(a.vote) } : {}) })),
+    discussion: d.discussion.map((x) => ({ ...x, topic: fix(x.topic), gist: fix(x.gist) })),
+    publicComment: d.publicComment.map((x) => ({ ...x, who: fix(x.who), topic: fix(x.topic), gist: fix(x.gist) })),
+    upcoming: d.upcoming.map((x) => ({ ...x, item: fix(x.item), ...(x.when ? { when: fix(x.when) } : {}) })),
+    background: d.background.map((b) => ({ ...b, point: fix(b.point) })),
+    nameCorrections: [...d.nameCorrections],
+    caveats: d.caveats.map(fix),
+  };
+  const seen = new Set(d.nameCorrections.map((f) => f.heard.toLowerCase()));
+  for (const f of fixes) {
+    if (seen.has(f.heard.toLowerCase())) continue;
+    seen.add(f.heard.toLowerCase());
+    out.nameCorrections.push(f);
+  }
+  return out;
 }
 
 /**
@@ -207,6 +242,13 @@ export function normalizeDigest(data: unknown): MeetingDigest | null {
     nameCorrections: records(d.nameCorrections)
       .map((x) => ({ heard: text(x.heard), corrected: text(x.corrected) }))
       .filter((x) => x.heard && x.corrected && x.heard !== x.corrected),
+    ...(Array.isArray(d.checkedAgainst)
+      ? {
+          checkedAgainst: records(d.checkedAgainst)
+            .map((s) => ({ label: text(s.label), url: text(s.url) }))
+            .filter((s) => s.label && /^https?:\/\//.test(s.url)),
+        }
+      : {}),
     caveats: Array.isArray(d.caveats) ? d.caveats.map(text).filter(Boolean) : [],
   };
 }
