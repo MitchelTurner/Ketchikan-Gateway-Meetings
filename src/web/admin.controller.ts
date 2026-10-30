@@ -18,6 +18,7 @@ import { normalizeDigest } from '../analysis/analysis.service';
 import { esc, formatDate, shortDate, verify } from '../util';
 import { adminLoginPage, AdminOverview, adminOverviewPage, adminPostPage, AdminPostRow, adminPostsPage, PostFilter } from './admin-page';
 import { adminMeetingsPage, adminTopicsPage, adminTranscriptPage, noteHref, page } from './page';
+import { badgeFor, FOUNDING_READERS } from '../referrals';
 import { isAdminToken, readCookie, StatsService } from './stats.service';
 
 const MONTH = 30 * 24 * 3600;
@@ -125,6 +126,7 @@ export class AdminController {
         this.prisma.analysis.count({ where: { approvedAt: { not: null }, hiddenAt: null } }),
         this.prisma.analysis.count({ where: { hiddenAt: { not: null } } }),
       ]);
+    const growth = await this.growthStats(d30);
     const sum = (k: 'views' | 'visits') => daily.reduce((t, d) => t + d[k], 0);
     const views30 = sum('views');
     const visits30 = sum('visits');
@@ -207,7 +209,36 @@ export class AdminController {
         failed30: sends.find((r) => r.status === 'failed')?._count._all ?? 0,
       },
       backfillDrafts: older,
+      growth,
     });
+  }
+
+  private async growthStats(since: Date): Promise<AdminOverview['growth']> {
+    const [newReaders30, invited30, invitedAll, readersEver, shareVisits, top] = await Promise.all([
+      this.prisma.subscriber.count({ where: { confirmedAt: { gte: since } } }),
+      this.prisma.subscriber.count({ where: { confirmedAt: { gte: since }, referredById: { not: null } } }),
+      this.prisma.subscriber.count({ where: { confirmedAt: { not: null }, referredById: { not: null } } }),
+      this.prisma.subscriber.count({ where: { confirmedAt: { not: null } } }),
+      this.pageStats.shareVisits(since),
+      this.prisma.subscriber.groupBy({
+        by: ['referredById'],
+        where: { confirmedAt: { not: null }, referredById: { not: null } },
+        _count: { _all: true },
+        orderBy: { _count: { referredById: 'desc' } },
+        take: 10,
+      }),
+    ]);
+    const people = await this.prisma.subscriber.findMany({ where: { id: { in: top.map((t) => t.referredById!) } }, select: { id: true, email: true } });
+    const email = new Map(people.map((p) => [p.id, p.email]));
+    return {
+      newReaders30,
+      invited30,
+      invitedAll,
+      readersEver,
+      foundingLeft: Math.max(0, FOUNDING_READERS - readersEver),
+      shareVisits,
+      inviters: top.map((t) => ({ email: email.get(t.referredById!) ?? '(removed)', count: t._count._all, badge: badgeFor(t._count._all)?.name ?? '' })),
+    };
   }
 
   @Get('posts')

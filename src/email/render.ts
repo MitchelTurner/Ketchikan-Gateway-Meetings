@@ -9,6 +9,12 @@ export interface RenderInput {
   unsubscribeUrl: string;
   preferencesUrl: string;
   banner?: string; // admin preview: approve link etc. (pre-escaped HTML)
+  /** The subscriber's own link to this recap, and how many neighbors have joined through their links. */
+  invite?: { url: string; count: number; badgesUrl: string };
+}
+
+function inviteLine(count: number): string {
+  return count ? `${count} neighbor${count === 1 ? ' has' : 's have'} joined through your link so far.` : 'When they sign up through it, it counts toward your reader badges.';
 }
 
 function rows<T>(v: T[] | null | undefined): T[] {
@@ -103,6 +109,16 @@ ${i.banner ?? ''}
 ${sections.join('\n')}
 <div style="margin-top:28px;padding:12px 14px;background:${C.bg};border-radius:6px;font-size:13px;color:${C.muted};line-height:1.5">${caveat.join('<br>')}</div>
 </div>
+${
+  i.invite
+    ? `<div style="margin-top:16px;background:${C.card};border:1px solid ${C.rule};border-radius:8px;padding:18px 24px;text-align:center">
+<div style="font-size:16px;font-weight:600;margin-bottom:4px">Know someone who'd want this?</div>
+<div style="font-size:14px;color:${C.muted};line-height:1.5;margin-bottom:12px">Forward this email or send them your link. ${esc(inviteLine(i.invite.count))}</div>
+<a href="${esc(i.invite.url)}" style="display:inline-block;background:${C.ink};color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 18px;border-radius:6px">Share this recap</a>
+<div style="font-size:12px;margin-top:10px"><a href="${esc(i.invite.badgesUrl)}" style="color:${C.muted}">Your invite link and badges</a></div>
+</div>`
+    : ''
+}
 <div style="font-size:12px;color:${C.muted};text-align:center;line-height:1.6;margin-top:18px">
 Not an official Borough publication.<br>
 <a href="${esc(i.preferencesUrl)}" style="color:${C.muted}">Change which meetings you get</a> · <a href="${esc(i.unsubscribeUrl)}" style="color:${C.muted}">Unsubscribe</a><br>
@@ -129,6 +145,7 @@ export function renderText(i: RenderInput): string {
   const checked = rows(d.checkedAgainst).filter((c) => c.label && c.url);
   if (checked.length) out.push(`Names checked against: ${checked.map((c) => `${c.label} (${c.url})`).join('; ')}.`);
   out.push('');
+  if (i.invite) out.push(`Know someone who'd want this? Send them your link: ${i.invite.url}`, inviteLine(i.invite.count), '');
   out.push(`Not an official Borough publication. Unsubscribe: ${i.unsubscribeUrl}`, i.mailingAddress);
   return out.join('\n');
 }

@@ -16,7 +16,8 @@ import { Q_CONTROL, Q_EMAIL } from '../queues';
 import { MeetingContext, normalizeContext, ResearchService, vocabulary } from '../research/research.service';
 import { TopicsService } from '../topics/topics.service';
 import { Segment, TranscriptionService } from '../transcription/transcription.service';
-import { esc, sign } from '../util';
+import { ensureRefCode, inviteUrl, referralCount } from '../referrals';
+import { esc, sign, slugify } from '../util';
 
 const BACKFILL_NOTE = 'Backfill: older than EMAIL_SINCE, so no email is sent. Approve to publish it on /notes.';
 
@@ -254,6 +255,9 @@ export class PipelineService {
     const sub = await this.prisma.subscriber.findUniqueOrThrow({ where: { id: subscriberId } });
     if (sub.status !== 'CONFIRMED') return;
     const input = await this.renderInput(meetingId, sub.token);
+    const [code, count] = await Promise.all([ensureRefCode(this.prisma, sub), referralCount(this.prisma, sub.id)]);
+    const notePath = `/notes/${encodeURIComponent(meetingId)}${slugify(input.digest.headline) ? `/${slugify(input.digest.headline)}` : ''}`;
+    input.invite = { url: inviteUrl(code, notePath), count, badgesUrl: `${config.publicBaseUrl}/preferences/${sub.token}#invite` };
     try {
       const providerId = await this.email.send({
         to: sub.email,

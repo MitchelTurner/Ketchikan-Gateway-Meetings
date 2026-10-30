@@ -72,7 +72,41 @@ export interface AdminOverview {
   subscribers: { confirmed: number; pending: number; unsubscribed: number; newThisWeek: number };
   email: { ready: boolean; sent30: number; failed30: number };
   backfillDrafts: number;
+  growth: {
+    newReaders30: number;
+    invited30: number;
+    invitedAll: number;
+    readersEver: number;
+    foundingLeft: number;
+    shareVisits: { via: string; views: number; visits: number }[];
+    inviters: { email: string; count: number; badge: string }[];
+  };
   flash?: string;
+}
+
+const CHANNEL: Record<string, string> = {
+  invite: 'Personal invite links',
+  sms: 'Text message',
+  email: 'Email',
+  facebook: 'Facebook',
+  copy: 'Copied link',
+  share: 'Phone share sheet',
+};
+
+function growthSection(g: AdminOverview['growth']): string {
+  const rate = g.newReaders30 ? Math.round((100 * g.invited30) / g.newReaders30) : 0;
+  const channels = g.shareVisits.length
+    ? `<ul class="list">${g.shareVisits.map((c) => `<li><span>${esc(CHANNEL[c.via] ?? c.via)}</span><span class="n">${n(c.visits)} visit${c.visits === 1 ? '' : 's'}</span></li>`).join('')}</ul>`
+    : '<p class="muted">No visits from shared links yet.</p>';
+  const inviters = g.inviters.length
+    ? `<table class="data"><thead><tr><th>Reader</th><th>Badge</th><th class="num">Joined</th></tr></thead><tbody>${g.inviters
+        .map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.badge)}</td><td class="num">${n(r.count)}</td></tr>`)
+        .join('')}</tbody></table>`
+    : '<p class="muted">Nobody has brought a neighbor yet. Invite links go out on the confirmation page, the settings page and every recap email.</p>';
+  return `<h2 class="section">Growth</h2>
+<div class="status-grid"><span><b>${n(g.invited30)}</b> of ${n(g.newReaders30)} new readers this month came through an invite${g.newReaders30 ? ` (${rate}%)` : ''}</span><span><b>${n(g.invitedAll)}</b> invited reader${g.invitedAll === 1 ? '' : 's'}, all time</span><span><b>${n(g.foundingLeft)}</b> Founding Reader spots left</span></div>
+<div class="cols"><section><h3 class="meta" style="text-transform:uppercase;letter-spacing:.12em;margin:10px 0 6px">Top inviters</h3>${inviters}</section>
+<section><h3 class="meta" style="text-transform:uppercase;letter-spacing:.12em;margin:10px 0 6px">Visits from shared links, 30 days</h3>${channels}</section></div>`;
 }
 
 export function adminOverviewPage(o: AdminOverview): string {
@@ -125,7 +159,8 @@ ${chart(o.daily)}
           })
         : ''
     }</div></section>
-</div>`,
+</div>
+${growthSection(o.growth)}`,
   );
 }
 

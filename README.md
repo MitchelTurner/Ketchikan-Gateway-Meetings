@@ -85,6 +85,15 @@ Open `/admin` and sign in with `ADMIN_TOKEN` (the browser stays signed in for 30
 
 Page views are counted on the server, without cookies or third-party scripts: the IP address and browser are hashed with a salt that changes daily, so a "visit" is one person on one day and neither is stored. Bots, link previews and your own signed-in visits are left out.
 
+## Readers bring readers
+
+- **Invite links.** Every confirmed reader gets a personal link (`/?r=code`) on their confirmation page, their settings page (`/preferences/:token`) and in every recap email ("Share this recap" goes to that recap with their code). The code is remembered for 30 days, so a visitor who reads a few recaps first still credits the neighbor who sent them.
+- **Credit only on confirmation.** A referral counts when the new reader confirms by email. Your own link never counts for you, and the first invite a person used keeps the credit.
+- **Badges, not prizes:** Good Neighbor (1), Town Crier (3), Harbormaster (5), First City Champion (10), Borough Legend (25), plus Founding Reader for the first 100 readers. Each reader sees their reader number. With email connected, the inviter gets a note when a neighbor joins (never who).
+- **Sharing.** Every published recap ends with Share / Text / Email / Facebook / Copy buttons (tagged `?via=` so the dashboard can count them) and a sign-up box.
+- **A goal everyone shares.** The sign-up boxes show progress toward the next round number of Ketchikan readers.
+- **Dashboard.** `/admin` → Growth: new readers who came through an invite, top inviters, and visits by share channel.
+
 ## Admin endpoints (Bearer `ADMIN_TOKEN`)
 - `GET /admin/inspect` — what's on the archive page
 - `POST /admin/discover` — check the archive now
