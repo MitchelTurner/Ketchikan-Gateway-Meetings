@@ -32,18 +32,21 @@ export class PublicController {
     return `User-agent: *\nDisallow: /admin\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
   }
 
-  /** Every reviewed recap, so search engines find them without crawling the search page. */
+  /** Written recaps and public topics, so search engines find them without crawling the index pages. */
   @Get('sitemap.xml')
   @Header('Content-Type', 'application/xml; charset=utf-8')
   async sitemap() {
     const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
     const notes = await this.prisma.meeting.findMany({
-      where: { analysis: { is: { approvedAt: { not: null }, hiddenAt: null } } },
+      where: { analysis: { is: { hiddenAt: null } } },
       select: { id: true, updatedAt: true, analysis: { select: { data: true } } },
       orderBy: { meetingDate: 'desc' },
       take: 5000,
     });
-    const topics = await this.prisma.topic.findMany({ where: { status: 'APPROVED' }, select: { slug: true, updatedAt: true } });
+    const topics = await this.prisma.topic.findMany({
+      where: { status: { not: 'ARCHIVED' }, meetings: { some: {} } },
+      select: { slug: true, updatedAt: true },
+    });
     const urls = [
       `<url><loc>${esc(base)}/</loc><changefreq>daily</changefreq></url>`,
       `<url><loc>${esc(base)}/notes</loc><changefreq>daily</changefreq></url>`,
@@ -80,7 +83,7 @@ export class PublicController {
     return { readers, goal: communityGoal(readers), ref: inviteCode(req) };
   }
 
-  /** Published recaps — the same notes subscribers get by email, after review. Newest first. */
+  /** Written recaps, newest first. Review still gates email; hidden recaps stay off this list. */
   @Get('notes')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async notes(@Query('q') q?: string, @Query('body') body?: string) {
@@ -93,31 +96,48 @@ export class PublicController {
     return this.prisma.topic.findMany({ where: { status: 'APPROVED' }, select: { slug: true, name: true }, orderBy: { name: 'asc' } });
   }
 
+  /** Any topic still on the site, including ones waiting for approval. Archived names are dropped. */
+  private followableSlugs() {
+    return this.prisma.topic.findMany({ where: { status: { not: 'ARCHIVED' } }, select: { slug: true, name: true } });
+  }
+
   private async normTopics(v: unknown): Promise<string[]> {
     const wanted = (Array.isArray(v) ? v : v ? [v] : []).map(String);
     if (!wanted.length) return [];
-    const valid = new Set((await this.topicOptions()).map((t) => t.slug));
+    const valid = new Set((await this.followableSlugs()).map((t) => t.slug));
     return [...new Set(wanted.filter((t) => valid.has(t)))];
+  }
+
+  /** Signup lists approved topics. Preferences also keeps any issue this reader already follows. */
+  private async topicChoices(selected: string[]) {
+    const approved = await this.topicOptions();
+    const known = new Set(approved.map((t) => t.slug));
+    const extra = selected.filter((s) => !known.has(s));
+    if (!extra.length) return approved;
+    const more = (await this.followableSlugs()).filter((t) => extra.includes(t.slug));
+    return [...approved, ...more].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   @Get('topics')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async topics() {
     const topics = await this.prisma.topic.findMany({
-      where: { status: 'APPROVED' },
-      include: { meetings: { include: { meeting: { select: { meetingDate: true } } } } },
+      where: { status: { not: 'ARCHIVED' }, meetings: { some: {} } },
+      include: { meetings: { include: { meeting: { select: { meetingDate: true, analysis: { select: { hiddenAt: true } } } } } } },
     });
-    const rows = topics.map((t) => {
-      const latest = [...t.meetings].sort((a, b) => (b.meeting.meetingDate?.getTime() ?? 0) - (a.meeting.meetingDate?.getTime() ?? 0))[0];
-      return {
+    const rows = topics.flatMap((t) => {
+      const visible = t.meetings.filter((l) => !l.meeting.analysis?.hiddenAt);
+      if (!visible.length) return [];
+      const latest = [...visible].sort((a, b) => (b.meeting.meetingDate?.getTime() ?? 0) - (a.meeting.meetingDate?.getTime() ?? 0))[0];
+      return [{
         slug: t.slug,
         name: t.name,
         description: t.description,
-        meetings: t.meetings.length,
+        meetings: visible.length,
         lastDate: shortDate(latest?.meeting.meetingDate, false),
         latest: latest?.summary ?? '',
         sort: latest?.meeting.meetingDate?.getTime() ?? 0,
-      };
+      }];
     });
     return topicsIndexPage(rows.sort((a, b) => b.sort - a.sort));
   }
@@ -132,7 +152,7 @@ export class PublicController {
         deepDives: { where: { status: 'SENT' }, orderBy: { approvedAt: 'desc' }, take: 1 },
       },
     });
-    if (!topic || topic.status !== 'APPROVED') {
+    if (!topic || topic.status === 'ARCHIVED') {
       return page('Topic not found', `<h1>That topic isn't here</h1><p><a href="/topics">See every topic</a>.</p>`);
     }
     const byId = new Map(topic.meetings.map((l) => [l.meetingId, l.meeting]));
@@ -140,7 +160,7 @@ export class PublicController {
       .filter((l) => !l.meeting.analysis?.hiddenAt)
       .sort((a, b) => (a.meeting.meetingDate?.getTime() ?? 0) - (b.meeting.meetingDate?.getTime() ?? 0))
       .map((l) => {
-        const digest = l.meeting.analysis?.approvedAt ? normalizeDigest(l.meeting.analysis.data) : null;
+        const digest = l.meeting.analysis && !l.meeting.analysis.hiddenAt ? normalizeDigest(l.meeting.analysis.data) : null;
         return {
           meetingId: l.meetingId,
           body: l.meeting.body,
@@ -199,11 +219,11 @@ export class PublicController {
     return meetingPage(m, normalizeDigest(m.analysis?.data), Boolean(m.analysis?.approvedAt), segments);
   }
 
-  /** Approved recaps, newest meeting date first. A query searches within that order. */
+  /** Written recaps that aren't hidden, newest meeting date first. A query searches within that order. */
   private async publishedHits(query: string, bodyName: string, limit: number): Promise<NoteHit[]> {
     const meetings = await this.prisma.meeting.findMany({
       where: {
-        analysis: { is: { approvedAt: { not: null }, hiddenAt: null } },
+        analysis: { is: { hiddenAt: null } },
         ...(bodyName ? { body: bodyName } : {}),
       },
       include: { analysis: true },
@@ -234,11 +254,11 @@ export class PublicController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   async note(@Param('id') id: string, @Req() req: Request) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
-    const digest = m?.analysis?.approvedAt && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
+    const digest = m?.analysis && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
     if (!m || !digest) {
-      return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here after they've been reviewed and emailed. <a href="/notes">Back to search</a>.</p>`);
+      return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here once they've been written. <a href="/notes">Back to search</a>.</p>`);
     }
-    return noteDetailPage(m, digest, { growth: await this.growth(req) });
+    return noteDetailPage(m, digest, { growth: await this.growth(req), draft: !m.analysis?.approvedAt });
   }
 
   /**
@@ -393,7 +413,7 @@ ${await this.kit(sub)}`,
       'Your email',
       `<h1>Your subscription</h1>${sub.status === 'CONFIRMED' ? await this.kit(sub) : ''}<h2 class="section">What you get</h2><form method="post" action="/preferences/${esc(token)}">
 <label class="check" style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="checkbox" name="recaps" value="1"${sub.recaps ? ' checked' : ''}> A recap after each meeting</label>
-${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicOptions(), sub.topics)}<button type="submit">Save</button></form>`,
+${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicChoices(sub.topics), sub.topics)}<button type="submit">Save</button></form>`,
       true,
     );
   }

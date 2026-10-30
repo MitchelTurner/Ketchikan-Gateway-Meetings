@@ -833,7 +833,7 @@ const METHOD = `<ol class="method">
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
 
 export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth) => {
-  // Lead with the newest reviewed recap; fall back to the newest draft so the page is never empty.
+  // Lead with the newest written recap; fall back to a docket headline so the page is never empty.
   const draft = work.find((w) => w.headline);
   const lead = recent[0]
     ? { href: noteHref(recent[0].id, recent[0].headline), body: recent[0].body, date: recent[0].date, headline: recent[0].headline, dek: recent[0].snippet, draft: false }
@@ -935,7 +935,7 @@ export function notesSearchPage(q: string, body: string, hits: NoteHit[]): strin
   );
   const list = hits.length
     ? hitList(hits)
-    : `<p class="empty">${q ? `Nothing in the published recaps matches “${esc(q)}”.` : 'No published recaps yet. Meetings being transcribed are on the <a href="/#docket">front page</a>.'}</p>`;
+    : `<p class="empty">${q ? `Nothing in the recaps matches “${esc(q)}”.` : 'No recaps written yet. Meetings still being transcribed are on the <a href="/#docket">front page</a>.'}</p>`;
   const count = hits.length ? `${hits.length} ${hits.length === 1 ? 'recap' : 'recaps'}${q ? ` matching “${esc(q)}”` : ''}` : '';
   const scope = body ? placeBody(body) : 'Ketchikan Gateway Borough';
   const title = q ? `“${q}” in ${scope} meeting recaps` : `${scope} meeting recaps`;
@@ -944,7 +944,7 @@ export function notesSearchPage(q: string, body: string, hits: NoteHit[]): strin
     `<main class="wrap" style="max-width:820px"><div class="article">
 <div class="kicker">Archive</div>
 <h1>${esc(title)}</h1>
-<p class="dek">Every reviewed recap, newest first. Search for a street, a project, an ordinance, or a name.</p>
+<p class="dek">Every written recap, newest first. Search for a street, a project, an ordinance, or a name.</p>
 <form method="get" action="/notes" class="search" role="search">
 <div><label for="q">Search</label><input id="q" type="search" name="q" value="${esc(q)}" placeholder="harbor, budget, ordinance…"></div>
 <div><label for="body">Meetings</label><select id="body" name="body">${options.join('')}</select></div>
@@ -1058,7 +1058,7 @@ export function noteDetailPage(
 ${opts.banner ?? ''}<div class="kicker">${esc(placeBody(meeting.body))}</div>
 <h1>${esc(d.headline)}</h1>
 ${partsList(meeting.title, meeting.body)}
-<div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a>${opts.draft ? '' : `<a href="/notes">More recaps</a>`}</div>
+<div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a></div>
 <div class="body">${sections}</div>
 <div class="notice"><strong>How this was made</strong>Written with AI from the Borough's recording and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
 ${opts.after ?? ''}
@@ -1109,7 +1109,7 @@ export function topicsIndexPage(topics: TopicSummary[]): string {
           (t) => `<li><a href="/topics/${esc(t.slug)}" style="grid-template-columns:minmax(0,1fr) auto"><div><h3>${esc(t.name)}</h3><p class="headline">${esc(t.description)}</p>${t.latest ? `<p class="meta" style="margin-top:6px">Latest${t.lastDate ? `, ${esc(t.lastDate)}` : ''}: ${esc(t.latest)}</p>` : ''}</div><span class="state done">${t.meetings} meeting${t.meetings === 1 ? '' : 's'}</span></a></li>`,
         )
         .join('')}</ul>`
-    : '<p class="empty">Topics appear here once the first issues have been picked out of the recaps.</p>';
+    : '<p class="empty">Topics appear here once issues have been picked out of the recaps.</p>';
   const description = 'The issues that keep coming back to Ketchikan Gateway Borough meetings, each followed from meeting to meeting in plain language.';
   return shell(
     `Ketchikan issues to follow · ${config.newsletterName}`,
@@ -1220,8 +1220,8 @@ export function adminTopicsPage(rows: AdminTopicRow[]): string {
 <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px">${
     t.status === 'SUGGESTED'
       ? btn(`/admin/topics/${t.id}/approve`, 'Approve') + btn(`/admin/topics/${t.id}/archive`, 'Not a topic', 'ghost')
-      : `${btn(`/admin/topics/${t.id}/dive`, 'Write a deep dive now')}${btn(`/admin/topics/${t.id}/archive`, 'Archive', 'ghost')}<a href="/topics/${esc(t.slug)}" class="meta">Public page →</a>`
-  }</div>
+      : `${btn(`/admin/topics/${t.id}/dive`, 'Write a deep dive now')}${btn(`/admin/topics/${t.id}/archive`, 'Archive', 'ghost')}`
+  }<a href="/topics/${esc(t.slug)}" class="meta">Public page →</a></div>
 ${t.dives.length ? `<ul class="parts" style="margin-top:10px">${t.dives.map((d) => `<li>${esc(d.status)} · ${esc(d.headline)} · <a href="${esc(d.previewHref)}">Preview</a>${d.status === 'DRAFT' ? ` · <a href="${esc(d.approveHref)}">Approve and send</a>` : ''}</li>`).join('')}</ul>` : ''}</div>`;
   const suggested = rows.filter((r) => r.status === 'SUGGESTED');
   const approved = rows.filter((r) => r.status === 'APPROVED');
@@ -1229,7 +1229,7 @@ ${t.dives.length ? `<ul class="parts" style="margin-top:10px">${t.dives.map((d) 
     'Topics',
     'topics',
     `<h1>Topics</h1>
-<p class="lede">Claude suggests issues as it reads each recap; the ones raised at the most meetings are at the top. Approved topics get a public page, a signup option, and a deep dive drafted automatically after each key moment.</p>
+<p class="lede">Claude suggests issues as it reads each recap; the ones raised at the most meetings are at the top. Suggested and approved topics are already on the public topics page. Approving one adds it to the signup form and drafts a deep dive after each key moment.</p>
 <p>${btn('/admin/topics/scan', 'Tag older recaps now')}</p>
 <h2 class="section">Suggested (${suggested.length})</h2>${suggested.length ? `<div class="hits">${suggested.map(card).join('')}</div>` : '<p class="muted">No suggestions waiting.</p>'}
 <h2 class="section">Approved (${approved.length})</h2>${approved.length ? `<div class="hits">${approved.map(card).join('')}</div>` : '<p class="muted">None yet.</p>'}
