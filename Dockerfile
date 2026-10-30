@@ -13,7 +13,7 @@ RUN npm run build && npm prune --omit=dev
 FROM node:22-bookworm-slim
 WORKDIR /app
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl curl redis-server \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates openssl curl redis-server poppler-utils \
  && curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux \
  && chmod +x /usr/local/bin/yt-dlp \
  && rm -rf /var/lib/apt/lists/*
