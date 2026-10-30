@@ -16,6 +16,13 @@ import { MeetingContext, normalizeContext, ResearchService, vocabulary } from '.
 import { Segment, TranscriptionService } from '../transcription/transcription.service';
 import { esc, sign } from '../util';
 
+const BACKFILL_NOTE = 'Backfill: older than EMAIL_SINCE, so no email is sent. Approve to publish it on /notes.';
+
+/** Older meetings are published on /notes and never emailed. A meeting with no date is treated as current. */
+export function isBackfill(m: { meetingDate: Date | null }): boolean {
+  return !!m.meetingDate && m.meetingDate < config.emailSince;
+}
+
 @Injectable()
 export class PipelineService {
   private log = new Logger(PipelineService.name);
@@ -37,7 +44,7 @@ export class PipelineService {
       where: { id: meetingId },
       include: { research: true, transcript: true, analysis: true },
     });
-    if (['SENDING', 'SENT'].includes(meeting.status)) return;
+    if (['SENDING', 'SENT', 'PUBLISHED'].includes(meeting.status)) return;
 
     try {
       let context = meeting.research ? normalizeContext(meeting.research.data) : null;
@@ -72,7 +79,11 @@ export class PipelineService {
       }
 
       await this.setStatus(meetingId, 'AWAITING_APPROVAL');
-      if (config.autoSend && config.emailReady) {
+      if (isBackfill(meeting)) {
+        // Hundreds of old meetings must not each send a review email.
+        if (config.autoSend) await this.approve(meetingId);
+        else await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: BACKFILL_NOTE } });
+      } else if (config.autoSend && config.emailReady) {
         await this.approve(meetingId);
       } else {
         await this.sendReviewEmail(meetingId);
@@ -109,8 +120,12 @@ export class PipelineService {
     return this.prisma.meeting.update({ where: { id }, data: { status, error: null } });
   }
 
+  approvePath(meetingId: string) {
+    return `/admin/meetings/${meetingId}/approve?sig=${sign(`approve:${meetingId}`)}`;
+  }
+
   approveUrl(meetingId: string) {
-    return `${config.publicBaseUrl}/admin/meetings/${meetingId}/approve?sig=${sign(`approve:${meetingId}`)}`;
+    return `${config.publicBaseUrl}${this.approvePath(meetingId)}`;
   }
 
   /**
@@ -150,10 +165,25 @@ export class PipelineService {
     });
   }
 
-  /** Marks the recap approved and fans out to subscribers. */
+  /** Marks the recap approved and fans out to subscribers. Backfill is published on /notes only. */
   async approve(meetingId: string) {
     await this.prisma.analysis.update({ where: { meetingId }, data: { approvedAt: new Date() } });
+    const meeting = await this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } });
+    if (isBackfill(meeting)) {
+      await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'PUBLISHED', error: null } });
+      return;
+    }
     await this.controlQ.add('deliver', { meetingId }, { jobId: `deliver-${meetingId}`, removeOnComplete: 200 });
+  }
+
+  /** Approves every drafted backfill recap at once. */
+  async publishBackfill(): Promise<number> {
+    const rows = await this.prisma.meeting.findMany({
+      where: { status: 'AWAITING_APPROVAL', meetingDate: { lt: config.emailSince }, analysis: { is: { approvedAt: null } } },
+      select: { id: true },
+    });
+    for (const m of rows) await this.approve(m.id);
+    return rows.length;
   }
 
   async deliver(meetingId: string) {

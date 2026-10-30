@@ -31,9 +31,20 @@ NestJS 11 · BullMQ on Redis · Prisma/Postgres · yt-dlp + ffmpeg · AssemblyAI
 | `RESEARCHING` → `DOWNLOADING` → `TRANSCRIBING` → `ANALYZING` | Working. Finished stages are saved and reused on retry. |
 | `AWAITING_APPROVAL` | Transcript and recap are saved. When Resend is configured, a review email goes to `ADMIN_EMAIL`. Until then, read the transcript on the meetings page. |
 | `SENT` | Queued to subscribers. Per-subscriber results are in `EmailSend`. |
+| `PUBLISHED` | Older than `EMAIL_SINCE`: approved and on `/notes`, not emailed. |
 | `FAILED` | See `error`; retried automatically 3×, or re-run with the process endpoint. |
 
 Set `AUTO_SEND=true` to skip approval once you trust the output.
+
+## Backfilling older meetings
+Set `PROCESS_SINCE` back, e.g. `PROCESS_SINCE=2023-11-01` for three years, and redeploy. On start (and every discovery run), meetings that were saved as `SKIPPED` and now fall inside the window are queued.
+
+- **Newest first.** Jobs are prioritized by meeting date, so a meeting from this week always jumps ahead of the backlog.
+- **No email for old meetings.** Anything dated before `EMAIL_SINCE` (default: 14 days ago) gets no review email and is never sent to subscribers. With `AUTO_SEND=true` it is published straight to `/notes` (status `PUBLISHED`). Otherwise it waits in `AWAITING_APPROVAL`: approve one from `/admin/meetings` or publish them all with `POST /admin/publish-backfill`. Drafts are readable on `/meetings/:id` before then.
+- **Research uses the roster as of the meeting date**, not today's, so names from a 2023 Assembly are checked against the 2023 members.
+- **Throughput:** one meeting at a time, about 30–45 minutes each, so a few hundred meetings take roughly a week. Watch progress with `GET /admin/stats`.
+- **Cost:** about $1–2 per meeting (transcription + research + recap). 200 meetings ≈ $200–400. Narrow it by moving `PROCESS_SINCE` forward; meetings already done are kept.
+- Only clips listed on the Granicus archive can be pulled. `GET /admin/inspect` shows how far back it goes.
 
 ## Names and news coverage
 Before downloading, Claude searches the web (`RESEARCH_DOMAINS`: the Borough site, Granicus agendas, Ketchikan Daily News, KRBD, Alaska Public Media, Alaska Beacon, ADN, …) for:
@@ -55,6 +66,7 @@ The result is saved per meeting (`Research` table) and used three ways:
 - `POST /admin/meetings/:id/process[?reanalyze=true]` — retry / force / regenerate the research and recap
 - `GET /admin/meetings/:id/preview` — the email as subscribers will see it
 - `GET /admin/meetings/:id/transcript` — transcript text in a browser, JSON from curl
+- `POST /admin/publish-backfill` — publish every drafted recap older than `EMAIL_SINCE` on `/notes` (no email)
 - `GET /admin/stats`
 
 Resend can stay unset while you check a transcript. The meeting lands on `AWAITING_APPROVAL` and the review email is skipped. Add `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL`, and `MAILING_ADDRESS`, then open the meeting again or re-run process to send the review.

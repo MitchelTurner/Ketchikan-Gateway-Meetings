@@ -17,6 +17,7 @@ enum MeetingStatus {
   AWAITING_APPROVAL // recap drafted, waiting for you to approve the send
   SENDING
   SENT
+  PUBLISHED         // backfill: approved and on /notes, not emailed
   FAILED
 }
 

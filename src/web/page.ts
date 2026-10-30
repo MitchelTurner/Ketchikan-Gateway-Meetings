@@ -53,6 +53,7 @@ export interface AdminMeetingRow {
   error: string | null;
   hasTranscript: boolean;
   hasAnalysis: boolean;
+  approveHref?: string;
 }
 
 /** Staff list. A transcript link means transcription finished, with or without Resend. */
@@ -63,6 +64,7 @@ export function adminMeetingsPage(rows: AdminMeetingRow[]): string {
           const links = [
             m.hasTranscript ? `<a href="/admin/meetings/${esc(m.id)}/transcript">Transcript</a>` : '',
             m.hasAnalysis ? `<a href="/admin/meetings/${esc(m.id)}/preview">Recap</a>` : '',
+            m.approveHref ? `<a href="${esc(m.approveHref)}">Approve</a>` : '',
           ].filter(Boolean);
           return `<div class="hit"><div class="kicker">${esc(m.body)}${m.date ? ` · ${esc(m.date)}` : ''} · ${esc(m.status)}</div><h2>${esc(m.title)}</h2>${m.error ? `<p>${esc(m.error)}</p>` : ''}${links.length ? `<p>${links.join(' · ')}</p>` : ''}</div>`;
         })
@@ -121,6 +123,7 @@ const STATUS_LABEL: Record<string, string> = {
   AWAITING_APPROVAL: 'Transcript ready',
   SENDING: 'Emailing subscribers',
   SENT: 'Emailed',
+  PUBLISHED: 'Published (older meeting, not emailed)',
   FAILED: 'Stopped before it finished',
   SKIPPED: 'Older than the transcription window',
 };

@@ -51,7 +51,7 @@ export class DiscoveryScheduler implements OnApplicationBootstrap {
       { name: 'discover', opts: { removeOnComplete: 50, removeOnFail: 50 } },
     );
     await this.controlQ.add('discover', {}, { jobId: `discover-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
-    const unfinished = await this.discovery.requeueUnfinished();
+    const unfinished = (await this.discovery.requeueUnfinished()) + (await this.discovery.promoteSkipped());
     this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued.`);
   }
 }

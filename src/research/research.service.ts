@@ -18,7 +18,7 @@ export interface MeetingContext {
 const SYSTEM = `You research a Ketchikan Gateway Borough public meeting so that an automated transcript of it can be checked and put in context.
 
 Use web search and web fetch. Look for:
-1. The current members of the body that met (Assembly, Planning Commission, etc.), the Mayor, Borough Manager, Borough Clerk, Borough Attorney and department heads, with names spelled exactly as the Borough publishes them. Prefer kgbak.us.
+1. The members of the body that met (Assembly, Planning Commission, etc.), the Mayor, Borough Manager, Borough Clerk, Borough Attorney and department heads, as of the meeting date (the meeting may be years old; use the minutes, agenda or coverage from that time, not today's roster), with names spelled exactly as the Borough publishes them. Prefer kgbak.us.
 2. The agenda for this meeting: item titles and ordinance/resolution numbers. The Borough posts agendas on kgbak.us and ketchikan.granicus.com (AgendaViewer.php).
 3. News coverage of this meeting and of the issues on its agenda: previews before it and reports after it, from Ketchikan Daily News, KRBD, Alaska Public Media, Alaska Beacon, Anchorage Daily News and similar outlets. Only include an article if it is about this meeting or an item on its agenda.
 

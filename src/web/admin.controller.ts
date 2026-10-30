@@ -9,7 +9,7 @@ import { timingSafeEqual } from 'crypto';
 import { config } from '../config';
 import { DiscoveryService } from '../discovery/discovery.service';
 import { renderHtml } from '../email/render';
-import { PipelineService } from '../pipeline/pipeline.service';
+import { isBackfill, PipelineService } from '../pipeline/pipeline.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL } from '../queues';
 import { esc, formatDate, verify } from '../util';
@@ -106,6 +106,7 @@ export class AdminController {
         error: m.error,
         hasTranscript: m.hasTranscript,
         hasAnalysis: m.hasAnalysis,
+        approveHref: m.status === 'AWAITING_APPROVAL' && m.hasAnalysis ? this.pipeline.approvePath(m.id) : undefined,
       })),
     );
   }
@@ -158,6 +159,10 @@ export class AdminController {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
     if (!m) throw new NotFoundException();
     if (m.analysis?.approvedAt) return page('Already approved', `<h1>Already approved</h1><p>${esc(m.title)} went out ${esc(m.analysis.approvedAt.toISOString())}.</p>`);
+    if (isBackfill(m)) {
+      return page('Publish recap', `<h1>Publish this recap?</h1><p><strong>${esc(m.title)}</strong><br>An older meeting: it goes on the public notes page and is not emailed.</p>
+<form method="post" action="/admin/meetings/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Publish</button></form>`);
+    }
     const n = await this.prisma.subscriber.count({ where: { status: 'CONFIRMED', OR: [{ bodies: { isEmpty: true } }, { bodies: { has: m.body } }] } });
     return page('Approve recap', `<h1>Send this recap?</h1><p><strong>${esc(m.title)}</strong><br>Goes to ${n} subscriber${n === 1 ? '' : 's'}.</p>
 <form method="post" action="/admin/meetings/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Approve and send</button></form>`);
@@ -171,7 +176,16 @@ export class AdminController {
     const a = await this.prisma.analysis.findUnique({ where: { meetingId: id } });
     if (!a) throw new NotFoundException();
     if (!a.approvedAt) await this.pipeline.approve(id);
+    const m = await this.prisma.meeting.findUnique({ where: { id } });
+    if (m && isBackfill(m)) return page('Published', `<h1>Published</h1><p>The recap is on the <a href="/notes">notes page</a>. No email was sent.</p>`);
     return page('Sending', `<h1>Sending</h1><p>The recap is on its way to subscribers.</p>`);
+  }
+
+  /** Publishes every drafted recap older than EMAIL_SINCE on /notes. Sends no email. */
+  @Post('publish-backfill')
+  @UseGuards(AdminGuard)
+  async publishBackfill() {
+    return { published: await this.pipeline.publishBackfill() };
   }
 
   @Get('stats')
