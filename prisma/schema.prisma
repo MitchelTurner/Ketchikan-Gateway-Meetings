@@ -36,6 +36,7 @@ model Meeting {
   updatedAt   DateTime      @updatedAt
 
   @@index([status])
+  @@index([meetingDate])
 }
 
 model Transcript {

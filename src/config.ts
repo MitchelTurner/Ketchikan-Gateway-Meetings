@@ -27,6 +27,17 @@ export const config = {
     if (v) return new Date(`${v}T00:00:00Z`);
     return new Date(Date.now() - 14 * 24 * 3600 * 1000);
   },
+  /** How many years of meetings to list on the public site. Transcription still uses processSince. */
+  get archiveYears(): number {
+    const n = Number(opt('ARCHIVE_YEARS', '3'));
+    return Number.isFinite(n) ? Math.min(10, Math.max(1, Math.floor(n))) : 3;
+  },
+  get archiveSince(): Date {
+    const d = new Date();
+    d.setUTCFullYear(d.getUTCFullYear() - this.archiveYears);
+    d.setUTCHours(12, 0, 0, 0);
+    return d;
+  },
   get channelListLimit() { return Number(opt('CHANNEL_LIST_LIMIT', '30')); },
 
   // Media

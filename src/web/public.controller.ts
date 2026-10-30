@@ -5,7 +5,7 @@ import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
 import { BODIES, esc, formatDate, randomToken } from '../util';
-import { bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
+import { bodyCheckboxes, meetingPage, meetingsArchivePage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -60,6 +60,44 @@ export class PublicController {
         detail: m.error || digest?.headline || (m.transcript ? 'Transcript is ready to read' : ''),
       };
     });
+  }
+
+  /** Every saved meeting from the last few years, including ones that were not transcribed. */
+  @Get('meetings')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async meetings(@Query('body') body?: string, @Query('page') pageNo?: string) {
+    const bodyName = VALID_BODIES.has(String(body ?? '')) ? String(body) : '';
+    const pageSize = 40;
+    const requested = Number.parseInt(String(pageNo ?? '1'), 10);
+    const pageNum = Number.isFinite(requested) && requested > 0 ? requested : 1;
+    const where = {
+      meetingDate: { gte: config.archiveSince },
+      ...(bodyName ? { body: bodyName } : {}),
+    };
+    const [total, rows] = await Promise.all([
+      this.prisma.meeting.count({ where }),
+      this.prisma.meeting.findMany({
+        where,
+        orderBy: [{ meetingDate: 'desc' }, { createdAt: 'desc' }],
+        skip: (pageNum - 1) * pageSize,
+        take: pageSize,
+        select: { id: true, title: true, body: true, meetingDate: true, status: true },
+      }),
+    ]);
+    return meetingsArchivePage(
+      rows.map((m) => ({
+        id: m.id,
+        title: m.title,
+        body: m.body,
+        date: formatDate(m.meetingDate),
+        status: m.status,
+      })),
+      total,
+      pageNum,
+      pageSize,
+      bodyName,
+      formatDate(config.archiveSince),
+    );
   }
 
   @Get('meetings/:id')
@@ -207,6 +245,7 @@ function notePlain(title: string, body: string, d: MeetingDigest): string {
     ...(d.discussion ?? []).flatMap((x) => (x ? [x.topic, x.gist] : [])),
     ...(d.publicComment ?? []).flatMap((x) => (x ? [x.who, x.topic, x.gist] : [])),
     ...(d.upcoming ?? []).flatMap((x) => (x ? [x.item, x.when] : [])),
+    ...(d.news ?? []).flatMap((n) => (n ? [n.outlet, n.title, n.note] : [])),
     ...(d.caveats ?? []),
   ]
     .filter((s) => typeof s === 'string' && s)

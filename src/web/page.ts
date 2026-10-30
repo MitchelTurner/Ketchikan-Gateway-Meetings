@@ -38,7 +38,7 @@ mark{background:#fff3c4;padding:0 2px;border-radius:2px}
 .caveat{margin-top:28px;padding:12px 14px;background:var(--bg);border-radius:6px;font-size:13px;color:var(--muted)}
 footer{text-align:center;margin-top:18px}
 </style></head><body><main>
-<nav class="nav"><a href="/notes">Notes</a><a href="/">Email updates</a></nav>
+<nav class="nav"><a href="/meetings">Meetings</a><a href="/notes">Notes</a><a href="/">Email updates</a></nav>
 <div class="card">${inner}</div>
 ${below}
 <footer class="muted">Not an official Ketchikan Gateway Borough publication.</footer></main></body></html>`;
@@ -145,7 +145,7 @@ export function workList(hits: WorkHit[]): string {
 
 export function archiveCard(work: WorkHit[], archiveCount: number, sinceLabel: string): string {
   const intro = archiveCount
-    ? `${archiveCount.toLocaleString('en-US')} clips found on the Borough video archive. Meetings on or after ${esc(sinceLabel)} are downloaded and transcribed.`
+    ? `${archiveCount.toLocaleString('en-US')} clips found on the Borough video archive. <a href="/meetings">Meetings from the last ${config.archiveYears} years</a> are listed here. Meetings on or after ${esc(sinceLabel)} are downloaded and transcribed.`
     : 'No clips recorded yet. The archive is checked when the server starts, then every few hours. Refresh in a minute.';
   const list = work.length
     ? workList(work)
@@ -223,15 +223,58 @@ export function meetingPage(
   const status = STATUS_LABEL[meeting.status] || meeting.status;
   const banner = `<p class="kicker">${esc(status)}</p>${meeting.error ? `<p>${esc(meeting.error)}</p>` : ''}${digest && !approved ? '<p class="muted">Draft recap — not emailed yet.</p>' : ''}`;
   const transcript = transcriptHtml(segments);
-  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, backHref: '/', backLabel: 'Home' });
+  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, backHref: '/meetings', backLabel: 'All meetings' });
+  const waiting =
+    meeting.status === 'SKIPPED'
+      ? '<p>This meeting is on the Borough video archive. Transcripts are made for meetings inside the current window.</p>'
+      : '<p>No transcript yet. This page updates when transcription finishes.</p>';
   return page(
     meeting.title,
     `<div class="kicker">${esc(meeting.body)}${meeting.meetingDate ? ` · ${esc(formatDate(meeting.meetingDate))}` : ''}</div>
 <h1>${esc(meeting.title)}</h1>
 ${banner}
 <p class="muted"><a href="${esc(meeting.sourceUrl)}">Watch the meeting</a></p>
-${transcript || '<p>No transcript yet. This page updates when transcription finishes.</p>'}
-<p style="margin-top:18px"><a href="/">Home</a></p>`,
+${transcript || waiting}
+<p style="margin-top:18px"><a href="/meetings">All meetings</a></p>`,
+    true,
+  );
+}
+
+export interface ArchiveHit {
+  id: string;
+  title: string;
+  body: string;
+  date: string;
+  status: string;
+}
+
+export function meetingsArchivePage(hits: ArchiveHit[], total: number, pageNum: number, pageSize: number, body: string, sinceLabel: string): string {
+  const options = ['<option value="">Every body</option>'].concat(
+    BODIES.map((b) => `<option value="${esc(b.name)}"${b.name === body ? ' selected' : ''}>${esc(b.name)}</option>`),
+  );
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const list = hits.length
+    ? `<div class="hits">${hits
+        .map((h) => {
+          const label = h.status === 'SKIPPED' ? '' : STATUS_LABEL[h.status] || h.status;
+          return `<a class="hit" href="/meetings/${esc(h.id)}"><div class="kicker">${esc(h.body)}${h.date ? ` · ${esc(h.date)}` : ''}${label ? ` · ${esc(label)}` : ''}</div><h2>${esc(h.title)}</h2></a>`;
+        })
+        .join('')}</div>`
+    : '<p class="muted">No meetings in that list yet. The archive is checked when the server starts.</p>';
+  const qs = (n: number) => `?page=${n}${body ? `&body=${encodeURIComponent(body)}` : ''}`;
+  const pager =
+    pages > 1
+      ? `<p class="muted">${pageNum > 1 ? `<a href="/meetings${qs(pageNum - 1)}">Newer</a>` : 'Newer'} · page ${pageNum} of ${pages} · ${pageNum < pages ? `<a href="/meetings${qs(pageNum + 1)}">Older</a>` : 'Older'}</p>`
+      : '';
+  return page(
+    'Meetings',
+    `<h1>Meetings</h1>
+<p>Borough meetings since ${esc(sinceLabel)}, newest first. Open one for the video. A transcript and recap are added for meetings inside the current window.</p>
+<form method="get" action="/meetings">
+<label for="body">Which meetings?</label><select id="body" name="body">${options.join('')}</select>
+<button type="submit">Show</button></form>
+<p class="muted">${total.toLocaleString('en-US')} ${total === 1 ? 'meeting' : 'meetings'}.</p>
+${list}${pager}`,
     true,
   );
 }
@@ -267,6 +310,14 @@ export function noteDetailPage(
       : '',
     upcoming.length
       ? h2('Coming up') + list(upcoming.map((x) => `${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))
+      : '',
+    (d.news ?? []).filter((n) => n && n.title && n.url).length
+      ? h2('Local coverage') +
+        list(
+          (d.news ?? [])
+            .filter((n) => n && n.title && n.url)
+            .map((n) => `<a href="${esc(n.url)}">${esc(n.outlet || 'Local news')}: ${esc(n.title)}</a>${n.note ? ` — ${esc(n.note)}` : ''}`),
+        )
       : '',
   ].join('');
   const caveats = [

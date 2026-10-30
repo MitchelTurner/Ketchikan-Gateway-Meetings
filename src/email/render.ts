@@ -63,6 +63,12 @@ export function renderHtml(i: RenderInput): string {
     );
   if (upcoming.length)
     sections.push(h2('Coming up') + list(upcoming.map((x) => li(`${esc(x.item)}${x.when ? ` — <strong>${esc(x.when)}</strong>` : ''}`))));
+  const news = rows(d.news).filter((n) => n.title && n.url);
+  if (news.length)
+    sections.push(
+      h2('Local coverage') +
+        list(news.map((n) => li(`<a href="${esc(n.url)}" style="color:${C.accent}">${esc(n.outlet || 'Local news')}: ${esc(n.title)}</a> — ${esc(n.note)}`))),
+    );
 
   const caveat = [
     'This recap was written by AI from an automated transcript. Names, numbers and votes can be misheard — check the video before relying on anything here.',
@@ -100,6 +106,12 @@ export function renderText(i: RenderInput): string {
   sec('Also discussed', discussion.map((x) => `${x.topic}: ${x.gist} [${hms(x.t)}]`));
   sec('Public comment', comments.map((x) => `${x.who} on ${x.topic}: ${x.gist} [${hms(x.t)}]`));
   sec('Coming up', upcoming.map((x) => `${x.item}${x.when ? ` — ${x.when}` : ''}`));
+  sec(
+    'Local coverage',
+    rows(d.news)
+      .filter((n) => n.title && n.url)
+      .map((n) => `${n.outlet}: ${n.title} — ${n.note} (${n.url})`),
+  );
   out.push('Written by AI from an automated transcript; check the video before relying on it.', ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []), '');
   out.push(`Not an official Borough publication. Unsubscribe: ${i.unsubscribeUrl}`, i.mailingAddress);
   return out.join('\n');

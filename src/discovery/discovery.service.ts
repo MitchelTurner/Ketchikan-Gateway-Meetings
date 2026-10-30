@@ -167,6 +167,30 @@ export class DiscoveryService {
     return pending.length;
   }
 
+  /**
+   * Recaps written before local news and the name check have no `news` field.
+   * Drop those drafts and run them again. Already-sent recaps stay as mailed.
+   */
+  async requeueRecapsWithoutNews(): Promise<number> {
+    const rows = await this.prisma.meeting.findMany({
+      where: {
+        status: { in: ['AWAITING_APPROVAL', 'FAILED'] },
+        transcript: { isNot: null },
+        analysis: { isNot: null },
+      },
+      select: { id: true, analysis: { select: { data: true } } },
+    });
+    let n = 0;
+    for (const m of rows) {
+      const data = m.analysis?.data;
+      if (data && typeof data === 'object' && !Array.isArray(data) && 'news' in data) continue;
+      await this.prisma.analysis.delete({ where: { meetingId: m.id } });
+      await this.enqueueProcess(m.id);
+      n++;
+    }
+    return n;
+  }
+
   enqueueProcess(meetingId: string) {
     return this.processQ.add(
       'process',

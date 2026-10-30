@@ -51,6 +51,8 @@ Resend can stay unset while you check a transcript. The meeting lands on `AWAITI
 
 The archive check runs when the server starts, not only on the 3-hour schedule. Meetings in the processing window that stopped early (a deploy resets the in-container queue) are queued again, including ones that already have a transcript but never got a recap. Download and transcription are skipped when those stages are already saved.
 
+`/meetings` lists every saved meeting from the last `ARCHIVE_YEARS` (default 3), with a link to the video. Transcription still follows `PROCESS_SINCE`. A recap checks names against the Borough and School Board rosters and reads nearby KRBD stories, then cites anything it uses under Local coverage.
+
 ## Costs (rough, per 3-hour meeting)
 AssemblyAI ≈ $0.45–1.10 depending on model · Claude Sonnet ≈ $0.30–0.60 (≈60–90k input tokens) · Resend free tier covers 3,000 emails/month.
 
