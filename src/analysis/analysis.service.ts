@@ -26,7 +26,8 @@ You work only from the automated transcript provided. Rules:
 - The transcript is machine-generated: names, numbers and ordinance/resolution numbers may be misheard. Use a person's name only when it is clearly stated in the transcript (e.g. the chair calling on them, or roll call). Otherwise describe the role ("an Assembly member", "a resident", "Borough staff"). "Speaker A" labels are not names; never print them.
 - If a vote count, motion outcome, or dollar figure is unclear, say so plainly rather than guessing, and add a caveat.
 - Every item gets "t": the start time in seconds of the transcript line where it happens, copied from the [Ns] markers.
-- Write in plain language a busy resident can skim. No jargon without a short explanation.
+- Write for every resident, including people who have never been to a meeting: about an 8th-grade reading level, short sentences, everyday words. The first time a process term appears ("first reading", "consent agenda", "mill rate", "variance"), explain it in a few words. When the transcript makes it clear, say what a decision means for residents: what it costs, where it is, when it takes effect. Never guess.
+- The headline is what people see in search results and their inbox. Name the body and the concrete subject the way a resident would search for it, lead with the most consequential decision, and use active voice: "Assembly approves $4.2 million for harbor repairs", not "Ordinance 2041 adopted". No ordinance numbers or acronyms in the headline.
 - Public comment: summarize each speaker's point fairly in one sentence, including people you'd disagree with.
 
 You may also get <reference> material gathered from the web: the official roster, the agenda, and news articles.
@@ -48,7 +49,7 @@ const DIGEST_FORMAT: Anthropic.JSONOutputFormat = {
   type: 'json_schema',
   schema: obj(
     {
-      headline: { type: 'string', description: 'One line, under 90 characters, the most consequential thing that happened.' },
+      headline: { type: 'string', description: 'Under 70 characters. Body + the most consequential concrete outcome, active voice, words a resident would search for.' },
       summary: { type: 'string', description: '2–3 short paragraphs, plain text, separated by blank lines.' },
       actions: {
         type: 'array',

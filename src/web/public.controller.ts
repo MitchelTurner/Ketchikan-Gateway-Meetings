@@ -5,7 +5,7 @@ import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
 import { BODIES, esc, randomToken, shortDate } from '../util';
-import { bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, notesSearchPage, page, signupPage, WorkHit } from './page';
+import { bodyCheckboxes, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, WorkHit } from './page';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
 const normBodies = (v: unknown): string[] =>
@@ -15,6 +15,35 @@ const normBodies = (v: unknown): string[] =>
 export class PublicController {
   private log = new Logger(PublicController.name);
   constructor(private prisma: PrismaService, private email: EmailService) {}
+
+  @Get('robots.txt')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  robots() {
+    const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
+    return `User-agent: *\nDisallow: /admin/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
+  }
+
+  /** Every reviewed recap, so search engines find them without crawling the search page. */
+  @Get('sitemap.xml')
+  @Header('Content-Type', 'application/xml; charset=utf-8')
+  async sitemap() {
+    const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
+    const notes = await this.prisma.meeting.findMany({
+      where: { analysis: { is: { approvedAt: { not: null } } } },
+      select: { id: true, updatedAt: true, analysis: { select: { data: true } } },
+      orderBy: { meetingDate: 'desc' },
+      take: 5000,
+    });
+    const urls = [
+      `<url><loc>${esc(base)}/</loc><changefreq>daily</changefreq></url>`,
+      `<url><loc>${esc(base)}/notes</loc><changefreq>daily</changefreq></url>`,
+      ...notes.flatMap((n) => {
+        const d = normalizeDigest(n.analysis?.data);
+        return d ? [`<url><loc>${esc(base + noteHref(n.id, d.headline))}</loc><lastmod>${n.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`] : [];
+      }),
+    ];
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`;
+  }
 
   @Get('health')
   health() {
@@ -58,6 +87,7 @@ export class PublicController {
         date: shortDate(m.meetingDate),
         status: m.status,
         headline: digest?.headline ?? '',
+        summary: digest?.summary.split(/\n\s*\n/)[0] ?? '',
       };
     });
   }
@@ -103,7 +133,8 @@ export class PublicController {
     return hits;
   }
 
-  @Get('notes/:id')
+  /** The slug only makes the URL readable; the id finds the note. */
+  @Get(['notes/:id', 'notes/:id/:slug'])
   @Header('Content-Type', 'text/html; charset=utf-8')
   async note(@Param('id') id: string) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
