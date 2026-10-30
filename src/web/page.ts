@@ -86,7 +86,7 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .facts{margin:18px 0 0;font:400 14.5px/1.5 var(--sans);color:var(--muted)}
 .facts b{color:var(--text);font-weight:600}
 .signup{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;padding:28px 0 0;margin-top:32px;box-shadow:none;scroll-margin-top:16px}
-#docket,#how,#follow,#subscribe{scroll-margin-top:16px}
+#docket,#how,#follow,#subscribe,#app{scroll-margin-top:16px}
 .signup h2{font-size:20px;letter-spacing:-.02em;margin:0 0 6px}
 .signup p{font:400 15.5px/1.55 var(--sans);color:var(--text-2);margin:0}
 .signup p.hint{font-size:13px;color:var(--muted);margin:12px 0 0}
@@ -211,6 +211,14 @@ a.hit:hover h2{color:var(--teal)}
 .steps li.done{color:var(--text-2)}.steps li.done::before{content:"✓";background:var(--green);border-color:var(--green);color:var(--bg)}
 .steps li.now{color:var(--text)}.steps li.now::before{border-color:var(--teal);color:var(--teal);box-shadow:0 0 0 4px color-mix(in srgb,var(--teal) 15%,transparent)}
 
+/* Phone app: add to the home screen, then allow a buzz when a recap is published. */
+.app-card{margin:8px 0 0;padding:36px 0 4px;border-top:1px solid var(--line)}
+.app-card h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
+.app-card > p{font:400 16px/1.55 var(--sans);color:var(--text-2);margin:0}
+.app-card .actions{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:280px}
+.app-card button{margin:0;width:100%}
+.app-card .hint{margin-top:12px}
+
 /* Footer: the note, then the links the bottom bar doesn't cover. */
 footer.site{position:relative;margin-top:56px;border-top:1px solid var(--line);padding:28px 0 8px;font:400 15px/1.6 var(--sans);color:var(--text-2)}
 footer.site p{max-width:38em;margin:0}
@@ -234,6 +242,8 @@ footer.site .where{margin-top:2px;font:400 12.5px/1.4 var(--mono);letter-spacing
   .search button{width:auto}
   .callout form{flex-direction:row}
   .callout button{width:auto;padding:0 22px}
+  .app-card .actions{flex-direction:row;max-width:none}
+  .app-card button{width:auto;padding:0 18px}
   .transcript p{grid-template-columns:76px minmax(0,1fr);gap:12px}
   .kit{padding:28px;border-radius:20px}
 }
@@ -280,6 +290,7 @@ function footer(): string {
 <nav aria-label="About this site">
 <a href="/#how">How we report</a>
 <a href="${esc(config.archiveUrl)}">Borough archive</a>
+<a href="/#app">Get the app</a>
 <a href="/#subscribe">Get the recap</a>
 </nav>
 <p class="where">Ketchikan · 55.34°N 131.65°W</p>
@@ -336,16 +347,101 @@ const GA_TAG = `<!-- Google tag (gtag.js) -->
 </script>`;
 
 /** Full document: the page name, its main element, the footer, and the bottom icon bar. */
+const APP_HEAD = `<link rel="manifest" href="/manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Recaps"><link rel="apple-touch-icon" href="/icon-192.png">`;
+
+/** Registers the app and, on the home page, the install and notification buttons. */
+const APP_JS = `<script>(function(){
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+var installBtn = document.getElementById('app-install');
+var notifyBtn = document.getElementById('app-notify');
+var note = document.getElementById('app-note');
+if (!installBtn || !notifyBtn) return;
+var installEvt = null;
+function say(t) { if (note) note.textContent = t; }
+function b64url(s) {
+  var pad = '='.repeat((4 - s.length % 4) % 4);
+  var b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  var a = new Uint8Array(b.length);
+  for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+  return a;
+}
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  installEvt = e;
+  installBtn.hidden = false;
+});
+installBtn.addEventListener('click', function() {
+  if (!installEvt) return;
+  installEvt.prompt();
+  installEvt.userChoice.then(function() { installEvt = null; installBtn.hidden = true; });
+});
+var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+if (ios && !standalone) {
+  say('On iPhone, tap Share, then Add to Home Screen. Open that icon, then turn on notifications.');
+  return;
+}
+if (!('Notification' in window) || !('PushManager' in window)) {
+  say('Use your browser menu to add this to your home screen, then open it and allow notifications.');
+  return;
+}
+function showOff() {
+  notifyBtn.hidden = false;
+  notifyBtn.textContent = 'Turn off notifications';
+  notifyBtn.setAttribute('data-off', '1');
+  say('This phone will buzz when a recap is published.');
+}
+function showOn() {
+  notifyBtn.hidden = false;
+  notifyBtn.textContent = 'Turn on notifications';
+  notifyBtn.removeAttribute('data-off');
+}
+if (Notification.permission === 'denied') {
+  say('Notifications are blocked. You can allow them in your phone settings.');
+  return;
+}
+navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
+  if (sub) showOff(); else showOn();
+});
+notifyBtn.addEventListener('click', function() {
+  if (notifyBtn.getAttribute('data-off')) {
+    navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
+      if (!sub) return;
+      var endpoint = sub.endpoint;
+      return sub.unsubscribe().then(function() {
+        return fetch('/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: endpoint }) });
+      });
+    }).then(function() { showOn(); say('Notifications are off on this phone.'); }).catch(function() { say('That did not stick. Try again in a minute.'); });
+    return;
+  }
+  Notification.requestPermission().then(function(perm) {
+    if (perm !== 'granted') { say('Notifications stay off until you allow them.'); return; }
+    fetch('/push/vapid').then(function(r) { if (!r.ok) throw new Error('key'); return r.json(); }).then(function(key) {
+      return navigator.serviceWorker.ready.then(function(reg) {
+        return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64url(key.publicKey) });
+      });
+    }).then(function(sub) {
+      return fetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub) });
+    }).then(function(r) {
+      if (!r.ok) throw new Error('save');
+      showOff();
+    }).catch(function() { say('That did not stick. Try again in a minute.'); });
+  });
+});
+})()</script>`;
+
 function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo; css?: string; bodyClass?: string } = {}): string {
-  return `<!doctype html><html lang="en"><head>${opts.bodyClass === 'desk' ? '' : GA_TAG}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="dark light"><meta name="theme-color" content="#06080b" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)"><title>${esc(title)}</title>
+  const desk = opts.bodyClass === 'desk';
+  return `<!doctype html><html lang="en"><head>${desk ? '' : GA_TAG}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light"><meta name="theme-color" content="#06080b" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)">${desk ? '' : APP_HEAD}<title>${esc(title)}</title>
 ${seoTags(title, opts.seo ?? {})}
 <style>${CSS}${opts.css ?? ''}</style></head><body${opts.bodyClass ? ` class="${esc(opts.bodyClass)}"` : ''}>
 ${main}
 ${footer()}
-${opts.bodyClass === 'desk' ? '' : tabbar()}
+${desk ? '' : tabbar()}
 ${SHARE_JS}
-${opts.bodyClass === 'desk' ? '' : TAB_JS}
+${desk ? '' : TAB_JS}
+${desk ? '' : APP_JS}
 </body></html>`;
 }
 
@@ -803,6 +899,16 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
 <section class="grid">
   <div id="docket"><h2 class="rubric">The docket</h2>${docketIntro}${workList(work)}</div>
   <aside id="how"><h2 class="rubric">How we report</h2>${METHOD}</aside>
+</section>
+
+<section class="app-card" id="app">
+<h2>On your phone</h2>
+<p>Add this to your home screen. It can buzz when a recap is published.</p>
+<div class="actions">
+<button type="button" id="app-install" hidden>Add to home screen</button>
+<button type="button" id="app-notify" hidden>Turn on notifications</button>
+</div>
+<p class="hint" id="app-note">On iPhone, tap Share, then Add to Home Screen. On Android, choose Install app from the browser menu. Then allow notifications.</p>
 </section>
 </main>`,
     {

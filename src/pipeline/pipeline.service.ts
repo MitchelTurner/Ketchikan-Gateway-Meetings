@@ -16,6 +16,7 @@ import { Q_CONTROL, Q_EMAIL } from '../queues';
 import { MeetingContext, normalizeContext, ResearchService, vocabulary } from '../research/research.service';
 import { TopicsService } from '../topics/topics.service';
 import { Segment, TranscriptionService } from '../transcription/transcription.service';
+import { PushService } from '../push/push.service';
 import { ensureRefCode, inviteUrl, referralCount } from '../referrals';
 import { esc, sign, slugify } from '../util';
 
@@ -38,6 +39,7 @@ export class PipelineService {
     private transcription: TranscriptionService,
     private analysis: AnalysisService,
     private email: EmailService,
+    private push: PushService,
     @InjectQueue(Q_CONTROL) private controlQ: Queue,
     @InjectQueue(Q_EMAIL) private emailQ: Queue,
   ) {}
@@ -211,6 +213,7 @@ export class PipelineService {
   async publishOnly(meetingId: string) {
     await this.prisma.analysis.update({ where: { meetingId }, data: { approvedAt: new Date() } });
     await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'PUBLISHED', error: null } });
+    void this.push.notifyRecap(meetingId);
   }
 
   /** Approves every drafted backfill recap at once. */
@@ -247,6 +250,7 @@ export class PipelineService {
     );
     await this.setStatus(meetingId, 'SENT');
     this.log.log(`Queued ${subs.length} emails for ${meeting.title}`);
+    void this.push.notifyRecap(meetingId);
   }
 
   async sendOne(meetingId: string, subscriberId: string) {

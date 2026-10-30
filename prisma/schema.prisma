@@ -193,6 +193,23 @@ model TopicSend {
   @@unique([deepDiveId, subscriberId])
 }
 
+/** One browser that asked to be buzzed when a recap is published. The endpoint is the address; uniqueness is kept in code so db push stays safe. */
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/** The key pair phones use to trust a notification. Created once, on the first install. */
+model PushKeys {
+  id         String @id
+  publicKey  String
+  privateKey String
+}
+
 model EmailSend {
   id           String     @id @default(cuid())
   meetingId    String

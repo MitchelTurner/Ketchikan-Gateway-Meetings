@@ -13,6 +13,8 @@ import { DeepDiveService } from './topics/deep-dive.service';
 import { TopicsService } from './topics/topics.service';
 import { Q_CONTROL, Q_EMAIL, Q_PROCESS } from './queues';
 import { TranscriptionService } from './transcription/transcription.service';
+import { PushController } from './push/push.controller';
+import { PushService } from './push/push.service';
 import { AdminController } from './web/admin.controller';
 import { PublicController } from './web/public.controller';
 import { StatsService } from './web/stats.service';
@@ -22,7 +24,7 @@ import { StatsService } from './web/stats.service';
     BullModule.forRootAsync({ useFactory: () => ({ connection: redisConnection() }) }),
     BullModule.registerQueue({ name: Q_CONTROL }, { name: Q_PROCESS }, { name: Q_EMAIL }),
   ],
-  controllers: [PublicController, AdminController],
+  controllers: [PublicController, AdminController, PushController],
   providers: [
     PrismaService,
     MediaService,
@@ -32,6 +34,7 @@ import { StatsService } from './web/stats.service';
     TranscriptionService,
     AnalysisService,
     EmailService,
+    PushService,
     DiscoveryService,
     PipelineService,
     ControlProcessor,
