@@ -417,7 +417,7 @@ export interface InviteKit {
   url: string;
   count: number;
   readerNo: number | null;
-  badges: { at: number; name: string; line: string }[];
+  badges: { at: number; name: string; line: string; merch?: string }[];
   foundingLimit: number;
 }
 
@@ -428,13 +428,18 @@ export function inviteKit(k: InviteKit): string {
   const message = `I've been reading ${config.newsletterName}: plain-language recaps of every Ketchikan Assembly, School Board and Planning Commission meeting. It's free.`;
   const ladder = [
     ...(founding ? [`<li class="badge founding on">${emblem('star', true)}<b>Founding Reader</b>Reader #${k.readerNo} of the first ${k.foundingLimit}</li>`] : []),
-    ...k.badges.map((b) => `<li class="badge${k.count >= b.at ? ' on' : ''}">${emblem('spruce', k.count >= b.at)}<b>${esc(b.name)}</b>${k.count >= b.at ? esc(b.line) : `${b.at} neighbor${b.at === 1 ? '' : 's'}`}</li>`),
+    ...k.badges.map((b) => {
+      const earned = k.count >= b.at;
+      const locked = `${b.at} neighbor${b.at === 1 ? '' : 's'}${b.merch ? ` · ${esc(b.merch)}` : ''}`;
+      const detail = earned ? `${esc(b.line)}${b.merch ? `<br>Your ${esc(b.merch)}. We email you for a shipping address.` : ''}` : locked;
+      return `<li class="badge${earned ? ' on' : ''}">${emblem('spruce', earned)}<b>${esc(b.name)}</b>${detail}</li>`;
+    }),
   ].join('');
   return `<section class="kit" id="invite"><h2>Bring a neighbor</h2>
-<p class="muted">Public meetings work better when more people know what happened. Send your link to someone who'd want to know; when they confirm, it counts toward your badges.</p>
+<p class="muted">Public meetings work better when more people know what happened. Send your link to someone who'd want to know. When they confirm, it counts. Five neighbors earns a sticker, ten a t-shirt, and twenty-five a hat and a t-shirt. We email you for a shipping address.</p>
 <div class="linkbox"><input type="text" readonly value="${esc(k.url)}" aria-label="Your invite link" onfocus="this.select()"><button type="button" data-copy="${esc(k.url)}">Copy</button></div>
 ${shareButtons(k.url, `${config.newsletterName}`, message, { tag: false, copyLabel: 'Copy invite' })}
-<div class="score"><strong>${k.count}</strong><span>neighbor${k.count === 1 ? '' : 's'} joined through your link${next ? `.<br>${next.at - k.count} more and you're a <b>${esc(next.name)}</b>.` : '. Every badge earned. Thank you.'}</span></div>
+<div class="score"><strong>${k.count}</strong><span>neighbor${k.count === 1 ? '' : 's'} joined through your link${next ? `.<br>${next.at - k.count} more and you're a <b>${esc(next.name)}</b>${next.merch ? ` — a ${esc(next.merch)}` : ''}.` : '. Every badge earned. Thank you.'}</span></div>
 <ul class="badges">${ladder}</ul></section>`;
 }
 

@@ -79,7 +79,7 @@ export interface AdminOverview {
     readersEver: number;
     foundingLeft: number;
     shareVisits: { via: string; views: number; visits: number }[];
-    inviters: { email: string; count: number; badge: string }[];
+    inviters: { email: string; count: number; badge: string; merch: string }[];
   };
   flash?: string;
 }
@@ -99,8 +99,8 @@ function growthSection(g: AdminOverview['growth']): string {
     ? `<ul class="list">${g.shareVisits.map((c) => `<li><span>${esc(CHANNEL[c.via] ?? c.via)}</span><span class="n">${n(c.visits)} visit${c.visits === 1 ? '' : 's'}</span></li>`).join('')}</ul>`
     : '<p class="muted">No visits from shared links yet.</p>';
   const inviters = g.inviters.length
-    ? `<table class="data"><thead><tr><th>Reader</th><th>Badge</th><th class="num">Joined</th></tr></thead><tbody>${g.inviters
-        .map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.badge)}</td><td class="num">${n(r.count)}</td></tr>`)
+    ? `<table class="data"><thead><tr><th>Reader</th><th>Badge</th><th>To mail</th><th class="num">Joined</th></tr></thead><tbody>${g.inviters
+        .map((r) => `<tr><td>${esc(r.email)}</td><td>${esc(r.badge)}</td><td>${r.merch ? esc(r.merch) : '—'}</td><td class="num">${n(r.count)}</td></tr>`)
         .join('')}</tbody></table>`
     : '<p class="muted">Nobody has brought a neighbor yet. Invite links go out on the confirmation page, the settings page and every recap email.</p>';
   return `<h2 class="section">Growth</h2>

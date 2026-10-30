@@ -16,15 +16,17 @@ export interface Badge {
   at: number;
   name: string;
   line: string;
+  /** Shown before the tier is earned, and mailed once it is. */
+  merch?: string;
 }
 
-/** Earned by neighbors who confirm through your link. Honors only: nothing to buy, nothing to redeem. */
+/** Earned by neighbors who confirm through your link. Merch is mailed; the editor sends it from the Growth list. */
 export const BADGES: Badge[] = [
-  { at: 1, name: 'Good Neighbor', line: 'Brought one neighbor to the table' },
-  { at: 3, name: 'Town Crier', line: 'Three readers who heard it from you' },
-  { at: 5, name: 'Harbormaster', line: 'Five neighbors keeping watch' },
-  { at: 10, name: 'First City Champion', line: 'Ten readers across the Borough' },
-  { at: 25, name: 'Borough Legend', line: 'Twenty-five neighbors informed' },
+  { at: 1, name: 'Foghorn', line: 'One neighbor heard it from you' },
+  { at: 3, name: 'Deckhand', line: 'Three neighbors reading along' },
+  { at: 5, name: 'Skipper', line: 'Five neighbors reading along', merch: 'sticker' },
+  { at: 10, name: 'Pilot', line: 'Ten neighbors reading along', merch: 't-shirt' },
+  { at: 25, name: 'Tongass', line: 'Twenty-five neighbors reading along', merch: 'hat and a t-shirt' },
 ];
 
 export function badgeFor(count: number): Badge | null {

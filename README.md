@@ -89,7 +89,7 @@ Page views are counted on the server, without cookies or third-party scripts: th
 
 - **Invite links.** Every confirmed reader gets a personal link (`/?r=code`) on their confirmation page, their settings page (`/preferences/:token`) and in every recap email ("Share this recap" goes to that recap with their code). The code is remembered for 30 days, so a visitor who reads a few recaps first still credits the neighbor who sent them.
 - **Credit only on confirmation.** A referral counts when the new reader confirms by email. Your own link never counts for you, and the first invite a person used keeps the credit.
-- **Badges, not prizes:** Good Neighbor (1), Town Crier (3), Harbormaster (5), First City Champion (10), Borough Legend (25), plus Founding Reader for the first 100 readers. Each reader sees their reader number. With email connected, the inviter gets a note when a neighbor joins (never who).
+- **Tiers:** Foghorn (1), Deckhand (3), Skipper (5, a sticker), Pilot (10, a t-shirt), Tongass (25, a hat and a t-shirt), plus Founding Reader for the first 100 readers. Merch is mailed after we email for a shipping address; the Growth list on `/admin` shows who has earned it. Each reader sees their reader number. With email connected, the inviter gets a note when a neighbor joins (never who).
 - **Sharing.** Every published recap ends with Share / Text / Email / Facebook / Copy buttons (tagged `?via=` so the dashboard can count them) and a sign-up box.
 - **A goal everyone shares.** The sign-up boxes show progress toward the next round number of Ketchikan readers.
 - **Dashboard.** `/admin` → Growth: new readers who came through an invite, top inviters, and visits by share channel.

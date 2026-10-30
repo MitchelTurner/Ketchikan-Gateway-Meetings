@@ -352,11 +352,15 @@ ${await this.kit(sub)}`,
       const earned = badge && badge.at === count ? badge : null;
       const url = `${config.publicBaseUrl}/preferences/${inviter.token}#invite`;
       const headline = earned ? `You're now a ${earned.name}` : 'A neighbor joined through your link';
+      const merchHtml = earned?.merch
+        ? `<p>You've earned a ${esc(earned.merch)}. Reply to this email with a shipping address and we'll mail it.</p>`
+        : '';
+      const merchText = earned?.merch ? `\n\nYou've earned a ${earned.merch}. Reply with a shipping address and we'll mail it.` : '';
       await this.email.send({
         to: inviter.email,
         subject: `${headline} · ${config.newsletterName}`,
-        html: `<p style="font-size:18px"><strong>${esc(headline)}.</strong></p><p>Someone you invited just confirmed their subscription to ${esc(config.newsletterName)}. That's ${count} neighbor${count === 1 ? '' : 's'} reading because of you.</p><p><a href="${esc(url)}">See your badges and invite link</a></p><p style="color:#5b6675;font-size:12px">We never tell you who signed up. ${esc(config.mailingAddress)}</p>`,
-        text: `${headline}. Someone you invited just confirmed. That's ${count} neighbor${count === 1 ? '' : 's'} reading because of you.\n\nYour badges and invite link: ${url}\n\n${config.mailingAddress}`,
+        html: `<p style="font-size:18px"><strong>${esc(headline)}.</strong></p><p>Someone you invited just confirmed their subscription to ${esc(config.newsletterName)}. That's ${count} neighbor${count === 1 ? '' : 's'} reading because of you.</p>${merchHtml}<p><a href="${esc(url)}">See your badges and invite link</a></p><p style="color:#5b6675;font-size:12px">We never tell you who signed up. ${esc(config.mailingAddress)}</p>`,
+        text: `${headline}. Someone you invited just confirmed. That's ${count} neighbor${count === 1 ? '' : 's'} reading because of you.${merchText}\n\nYour badges and invite link: ${url}\n\n${config.mailingAddress}`,
       });
     } catch (err) {
       this.log.warn(`Invite thank-you not sent: ${(err as Error).message}`);

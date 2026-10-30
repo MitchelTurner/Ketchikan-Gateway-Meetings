@@ -237,7 +237,10 @@ export class AdminController {
       readersEver,
       foundingLeft: Math.max(0, FOUNDING_READERS - readersEver),
       shareVisits,
-      inviters: top.map((t) => ({ email: email.get(t.referredById!) ?? '(removed)', count: t._count._all, badge: badgeFor(t._count._all)?.name ?? '' })),
+      inviters: top.map((t) => {
+        const badge = badgeFor(t._count._all);
+        return { email: email.get(t.referredById!) ?? '(removed)', count: t._count._all, badge: badge?.name ?? '', merch: badge?.merch ?? '' };
+      }),
     };
   }
 
