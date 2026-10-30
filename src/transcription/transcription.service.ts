@@ -22,12 +22,13 @@ export class TranscriptionService {
     return config.transcriptionProvider;
   }
 
-  transcribe(audioPath: string): Promise<Segment[]> {
-    return config.transcriptionProvider === 'openai' ? this.openai(audioPath) : this.assemblyai(audioPath);
+  /** vocabulary: names and local terms to listen for, so they come back spelled right. */
+  transcribe(audioPath: string, vocabulary: string[] = []): Promise<Segment[]> {
+    return config.transcriptionProvider === 'openai' ? this.openai(audioPath, vocabulary) : this.assemblyai(audioPath, vocabulary);
   }
 
   /** AssemblyAI: takes the whole file, labels speakers. Best fit for 2–4 hour meetings. */
-  private async assemblyai(audioPath: string): Promise<Segment[]> {
+  private async assemblyai(audioPath: string, vocabulary: string[]): Promise<Segment[]> {
     const headers = { authorization: config.assemblyaiKey };
     const up = await fetch('https://api.assemblyai.com/v2/upload', {
       method: 'POST',
@@ -40,7 +41,13 @@ export class TranscriptionService {
     const create = await fetch('https://api.assemblyai.com/v2/transcript', {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
-      body: JSON.stringify({ audio_url: upload_url, speaker_labels: true, punctuate: true, format_text: true }),
+      body: JSON.stringify({
+        audio_url: upload_url,
+        speaker_labels: true,
+        punctuate: true,
+        format_text: true,
+        ...(vocabulary.length ? { word_boost: vocabulary, boost_param: 'high' } : {}),
+      }),
     });
     if (!create.ok) throw new Error(`AssemblyAI create ${create.status}: ${await create.text()}`);
     const { id } = (await create.json()) as { id: string };
@@ -65,7 +72,9 @@ export class TranscriptionService {
   }
 
   /** OpenAI Whisper: 25 MB upload cap, so audio is sent in 20-minute chunks. No speaker labels. */
-  private async openai(audioPath: string): Promise<Segment[]> {
+  private async openai(audioPath: string, vocabulary: string[]): Promise<Segment[]> {
+    // Whisper reads only the last ~224 tokens of the prompt.
+    const prompt = `Ketchikan Gateway Borough meeting. Assembly, Planning Commission, Saxman, Gravina, Revilla, Ward Cove, Tongass. ${vocabulary.join(', ')}`.slice(0, 800);
     const chunks = await this.media.splitAudio(audioPath, 20 * 60);
     const all: Segment[] = [];
     for (const { file, offsetSec } of chunks) {
@@ -73,7 +82,7 @@ export class TranscriptionService {
       form.append('file', new Blob([await fs.readFile(file)], { type: 'audio/mpeg' }), path.basename(file));
       form.append('model', 'whisper-1');
       form.append('response_format', 'verbose_json');
-      form.append('prompt', 'Ketchikan Gateway Borough meeting. Assembly, Planning Commission, Saxman, Gravina, Revilla, Ward Cove, Tongass.');
+      form.append('prompt', prompt);
       const r = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: { authorization: `Bearer ${config.openaiKey}` },

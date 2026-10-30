@@ -42,6 +42,22 @@ export const config = {
   get anthropicKey() { return req('ANTHROPIC_API_KEY'); },
   get anthropicModel() { return opt('ANTHROPIC_MODEL', 'claude-sonnet-5-5'); },
 
+  // Research: names, agenda and news found on the web before transcription
+  get researchEnabled() { return opt('RESEARCH_ENABLED', 'true') === 'true'; },
+  get researchModel() { return opt('RESEARCH_MODEL', this.anthropicModel); },
+  /** Sites web search and fetch may use. Empty = the whole web. */
+  get researchDomains(): string[] {
+    return list(opt('RESEARCH_DOMAINS', 'kgbak.us,granicus.com,ktn-ak.us,kgbsd.org,ketchikandailynews.com,krbd.org,alaskapublic.org,alaskabeacon.com,adn.com,akleg.gov'));
+  },
+  /** "Name — Role; Name — Role". Spellings you want used even when the web disagrees. */
+  get knownNames(): { name: string; role: string }[] {
+    return (process.env.KNOWN_NAMES || '')
+      .split(';')
+      .map((s) => s.split(/\s+[—–-]\s+/))
+      .map(([name, role]) => ({ name: (name || '').trim(), role: (role || '').trim() }))
+      .filter((p) => p.name);
+  },
+
   // Email
   get resendKey() { return req('RESEND_API_KEY'); },
   get emailFrom() { return req('EMAIL_FROM'); },
@@ -70,6 +86,10 @@ export const config = {
   // The image starts a local Redis when none of these are set.
   get redisUrl() { return resolveRedisUrl(); },
 };
+
+function list(v: string): string[] {
+  return v.split(',').map((s) => s.trim()).filter(Boolean);
+}
 
 function resolveRedisUrl(): string {
   if (process.env.REDIS_URL) return process.env.REDIS_URL;

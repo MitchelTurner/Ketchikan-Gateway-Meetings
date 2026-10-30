@@ -12,6 +12,7 @@ import { renderHtml, renderSubject, renderText, RenderInput } from '../email/ren
 import { MediaService } from '../media/media.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL, Q_EMAIL } from '../queues';
+import { MeetingContext, normalizeContext, ResearchService, vocabulary } from '../research/research.service';
 import { Segment, TranscriptionService } from '../transcription/transcription.service';
 import { esc, sign } from '../util';
 
@@ -22,6 +23,7 @@ export class PipelineService {
   constructor(
     private prisma: PrismaService,
     private media: MediaService,
+    private research: ResearchService,
     private transcription: TranscriptionService,
     private analysis: AnalysisService,
     private email: EmailService,
@@ -29,15 +31,18 @@ export class PipelineService {
     @InjectQueue(Q_EMAIL) private emailQ: Queue,
   ) {}
 
-  /** download → transcribe → analyze → (approval email | deliver). Each stage is skipped if already done. */
+  /** research → download → transcribe → analyze → (approval email | deliver). Each stage is skipped if already done. */
   async processMeeting(meetingId: string) {
     const meeting = await this.prisma.meeting.findUniqueOrThrow({
       where: { id: meetingId },
-      include: { transcript: true, analysis: true },
+      include: { research: true, transcript: true, analysis: true },
     });
     if (['SENDING', 'SENT'].includes(meeting.status)) return;
 
     try {
+      let context = meeting.research ? normalizeContext(meeting.research.data) : null;
+      if (!context && !meeting.analysis && config.researchEnabled) context = await this.runResearch(meeting);
+
       let segments = meeting.transcript?.segments as Segment[] | undefined;
       if (!segments) {
         const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'meeting-'));
@@ -45,7 +50,7 @@ export class PipelineService {
           await this.setStatus(meetingId, 'DOWNLOADING');
           const audio = await this.media.downloadAudio(meeting.sourceUrl, dir);
           await this.setStatus(meetingId, 'TRANSCRIBING');
-          segments = await this.transcription.transcribe(audio);
+          segments = await this.transcription.transcribe(audio, vocabulary(context));
           if (!segments.length) throw new Error('Transcript came back empty');
           await this.prisma.transcript.create({
             data: {
@@ -62,7 +67,7 @@ export class PipelineService {
 
       if (!meeting.analysis) {
         await this.setStatus(meetingId, 'ANALYZING');
-        const digest = await this.analysis.analyze(meeting, segments);
+        const digest = await this.analysis.analyze(meeting, segments, context);
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
       }
 
@@ -78,6 +83,25 @@ export class PipelineService {
         data: { status: 'FAILED', error: (err as Error).message.slice(0, 2000) },
       });
       throw err;
+    }
+  }
+
+  /**
+   * Roster, agenda and news from the web. A failure here is logged and the
+   * meeting carries on without it; the next run tries again.
+   */
+  private async runResearch(meeting: Meeting): Promise<MeetingContext | null> {
+    await this.setStatus(meeting.id, 'RESEARCHING');
+    try {
+      const context = await this.research.research(meeting);
+      await this.prisma.research.create({ data: { meetingId: meeting.id, model: this.research.model, data: context as any } });
+      this.log.log(
+        `${meeting.id}: research found ${context.people.length} people, ${context.agenda.length} agenda items, ${context.articles.length} articles`,
+      );
+      return context;
+    } catch (err) {
+      this.log.warn(`${meeting.id}: research failed, continuing without it: ${(err as Error).message}`);
+      return config.knownNames.length ? { people: config.knownNames, agenda: [], terms: [], articles: [] } : null;
     }
   }
 
@@ -113,7 +137,11 @@ export class PipelineService {
     const input = await this.renderInput(meetingId, null);
     input.banner = `<div style="background:#fff7e0;border:1px solid #e8c766;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:14px;line-height:1.5">
 <strong>Preview — not sent to subscribers yet.</strong><br>Check the recap against the video, then
-<a href="${esc(this.approveUrl(meetingId))}" style="color:#0b5d7a;font-weight:600">approve and send</a>.</div>`;
+<a href="${esc(this.approveUrl(meetingId))}" style="color:#0b5d7a;font-weight:600">approve and send</a>.${
+      input.digest.nameCorrections.length
+        ? `<br><br>Names corrected from the transcript: ${input.digest.nameCorrections.map((f) => `${esc(f.heard)} → <strong>${esc(f.corrected)}</strong>`).join(', ')}`
+        : ''
+    }</div>`;
     await this.email.send({
       to: config.adminEmail,
       subject: `[Review] ${renderSubject(input)}`,

@@ -116,7 +116,11 @@ export class AdminController {
   async process(@Param('id') id: string, @Query('reanalyze') reanalyze?: string) {
     const existing = await this.prisma.meeting.findUnique({ where: { id }, select: { id: true } });
     if (!existing) throw new NotFoundException();
-    if (reanalyze === 'true') await this.prisma.analysis.deleteMany({ where: { meetingId: id } });
+    if (reanalyze === 'true') {
+      // News coverage often lands days after the meeting; look again.
+      await this.prisma.analysis.deleteMany({ where: { meetingId: id } });
+      await this.prisma.research.deleteMany({ where: { meetingId: id } });
+    }
     await this.prisma.meeting.update({ where: { id }, data: { status: 'DISCOVERED', error: null } });
     await this.discovery.enqueueProcess(id);
     return { queued: true };

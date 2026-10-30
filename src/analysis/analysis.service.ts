@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable } from '@nestjs/common';
 import { config } from '../config';
+import { formatContext, MeetingContext } from '../research/research.service';
 import { formatTranscript, Segment } from '../transcription/transcription.service';
 import { formatDate } from '../util';
 
@@ -11,6 +12,10 @@ export interface MeetingDigest {
   discussion: { topic: string; gist: string; t: number }[];
   publicComment: { who: string; topic: string; gist: string; t: number }[];
   upcoming: { item: string; when?: string }[];
+  /** Context from news coverage. Not from the meeting itself. */
+  background: { point: string; sources: string[] }[];
+  /** Transcript spellings replaced with the published spelling. */
+  nameCorrections: { heard: string; corrected: string }[];
   caveats: string[];
 }
 
@@ -22,7 +27,12 @@ You work only from the automated transcript provided. Rules:
 - If a vote count, motion outcome, or dollar figure is unclear, say so plainly rather than guessing, and add a caveat.
 - Every item gets "t": the start time in seconds of the transcript line where it happens, copied from the [Ns] markers.
 - Write in plain language a busy resident can skim. No jargon without a short explanation.
-- Public comment: summarize each speaker's point fairly in one sentence, including people you'd disagree with.`;
+- Public comment: summarize each speaker's point fairly in one sentence, including people you'd disagree with.
+
+You may also get <reference> material gathered from the web: the official roster, the agenda, and news articles.
+- Names: the transcription often misspells names. When a transcript name sounds like a roster name and the role fits (e.g. the transcript has "Member Jonsen" and the roster lists Assembly Member "Johnson"), use the roster spelling and list it in nameCorrections. Do not attach a name to a statement just because the roster has it; the transcript must still show who is speaking.
+- Agenda: use it to get ordinance/resolution numbers and item titles right when the transcript clearly refers to that item. Outcomes and votes come only from the transcript.
+- News: put useful context from the articles in "background", one point per item, each citing the article URL(s) it came from, exactly as listed. Never present something from an article as having been said or decided at this meeting. If an article contradicts the transcript, say so in caveats.`;
 
 // Sonnet 5.5 rejects tool_choice "tool" and "any". A JSON schema response is the
 // supported way to get this object back. Every object needs additionalProperties: false.
@@ -84,9 +94,25 @@ const DIGEST_FORMAT: Anthropic.JSONOutputFormat = {
           ['item', 'when'],
         ),
       },
+      background: {
+        type: 'array',
+        description: 'Up to 5 points of context from the reference news articles. Empty if there are none.',
+        items: obj(
+          {
+            point: { type: 'string', description: 'One or two sentences, attributed ("KRBD reported ...").' },
+            sources: { type: 'array', items: { type: 'string' }, description: 'Article URLs from the reference, exactly as given.' },
+          },
+          ['point', 'sources'],
+        ),
+      },
+      nameCorrections: {
+        type: 'array',
+        description: 'Names the transcript misspelled that you corrected from the reference roster.',
+        items: obj({ heard: { type: 'string' }, corrected: { type: 'string' } }, ['heard', 'corrected']),
+      },
       caveats: { type: 'array', items: { type: 'string' }, description: 'Audio gaps, unclear votes, likely misheard names.' },
     },
-    ['headline', 'summary', 'actions', 'discussion', 'publicComment', 'upcoming', 'caveats'],
+    ['headline', 'summary', 'actions', 'discussion', 'publicComment', 'upcoming', 'background', 'nameCorrections', 'caveats'],
   ),
 };
 
@@ -101,8 +127,13 @@ export class AnalysisService {
     return config.anthropicModel;
   }
 
-  async analyze(meeting: { title: string; body: string; meetingDate: Date | null }, segments: Segment[]): Promise<MeetingDigest> {
+  async analyze(
+    meeting: { title: string; body: string; meetingDate: Date | null },
+    segments: Segment[],
+    context?: MeetingContext | null,
+  ): Promise<MeetingDigest> {
     const transcript = formatTranscript(segments);
+    const reference = context ? formatContext(context) : '';
     const res = await this.anthropic.messages.create({
       model: this.model,
       max_tokens: 16000,
@@ -111,7 +142,7 @@ export class AnalysisService {
       messages: [
         {
           role: 'user',
-          content: `Meeting: ${meeting.title}\nBody: ${meeting.body}\nDate: ${formatDate(meeting.meetingDate) || 'unknown'}\n\n<transcript>\n${transcript}\n</transcript>`,
+          content: `Meeting: ${meeting.title}\nBody: ${meeting.body}\nDate: ${formatDate(meeting.meetingDate) || 'unknown'}\n\n${reference ? `<reference>\n${reference}\n</reference>\n\n` : ''}<transcript>\n${transcript}\n</transcript>`,
         },
       ],
     });
@@ -131,6 +162,11 @@ export class AnalysisService {
     if (!parsed) throw new Error(`Claude returned no digest (stop_reason: ${res.stop_reason})`);
     const digest = normalizeDigest(parsed);
     if (!digest) throw new Error('Claude returned a digest without a headline and summary');
+    // A background point may only link to an article the research step found.
+    const known = new Set((context?.articles ?? []).map((a) => a.url));
+    digest.background = digest.background
+      .map((b) => ({ ...b, sources: b.sources.filter((u) => known.has(u)) }))
+      .filter((b) => b.sources.length);
     return digest;
   }
 }
@@ -164,6 +200,12 @@ export function normalizeDigest(data: unknown): MeetingDigest | null {
     upcoming: records(d.upcoming)
       .map((x) => ({ item: text(x.item), ...(text(x.when) ? { when: text(x.when) } : {}) }))
       .filter((x) => x.item),
+    background: records(d.background)
+      .map((x) => ({ point: text(x.point), sources: Array.isArray(x.sources) ? x.sources.map(text).filter((u) => /^https?:\/\//.test(u)) : [] }))
+      .filter((x) => x.point && x.sources.length),
+    nameCorrections: records(d.nameCorrections)
+      .map((x) => ({ heard: text(x.heard), corrected: text(x.corrected) }))
+      .filter((x) => x.heard && x.corrected && x.heard !== x.corrected),
     caveats: Array.isArray(d.caveats) ? d.caveats.map(text).filter(Boolean) : [],
   };
 }

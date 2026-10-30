@@ -9,6 +9,7 @@ datasource db {
 
 enum MeetingStatus {
   DISCOVERED        // found on the archive, queued
+  RESEARCHING       // looking up roster, agenda and news coverage
   SKIPPED           // older than PROCESS_SINCE (use admin retry to force)
   DOWNLOADING
   TRANSCRIBING
@@ -29,6 +30,7 @@ model Meeting {
   durationSec Int?
   status      MeetingStatus @default(DISCOVERED)
   error       String?
+  research    Research?
   transcript  Transcript?
   analysis    Analysis?
   sends       EmailSend[]
@@ -36,6 +38,15 @@ model Meeting {
   updatedAt   DateTime      @updatedAt
 
   @@index([status])
+}
+
+model Research {
+  id        String   @id @default(cuid())
+  meetingId String   @unique
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  model     String
+  data      Json // MeetingContext: people, agenda, terms, articles
+  createdAt DateTime @default(now())
 }
 
 model Transcript {
