@@ -12,7 +12,7 @@ import {
   BADGES, badgeFor, communityGoal, confirmedReaders, ensureRefCode, FOUNDING_READERS, inviteUrl, readerNumber, REF_PATTERN, referralCount,
 } from '../referrals';
 import {
-  bodyCheckboxes, ComingItem, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
+  bodyCheckboxes, ComingGroup, comingContext, comingIsPast, comingWho, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readCookie } from './stats.service';
@@ -120,33 +120,43 @@ export class PublicController {
     return { current, span: spanLabel(items.map((r) => r.at)), items: items.map(({ href, sentence }) => ({ href, sentence })) };
   }
 
-  /** The next hearings and deadlines named in the newest written recaps. */
-  private async comingUp(): Promise<ComingItem[]> {
+  /** The next hearings and deadlines named in the newest written recaps, grouped by the meeting that set them. */
+  private async comingUp(): Promise<ComingGroup[]> {
     const meetings = await this.prisma.meeting.findMany({
       where: { analysis: { is: { hiddenAt: null } } },
       include: { analysis: true },
       orderBy: [{ meetingDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
       take: 8,
     });
-    const items: ComingItem[] = [];
-    const seen = new Set<string>();
+    const today = zonedNoon(config.timezone);
+    const groups: ComingGroup[] = [];
     for (const m of meetings) {
       const digest = publicDigest(m.analysis?.data);
       if (!digest) continue;
+      const seen = new Set<string>();
+      const items: ComingGroup['items'] = [];
       for (const upcoming of digest.upcoming) {
-        const key = upcoming.item.replace(/\s+/g, ' ').trim().toLowerCase();
+        const item = upcoming.item.replace(/\s+/g, ' ').trim();
+        const key = item.toLowerCase();
         if (!key || seen.has(key)) continue;
+        const when = (upcoming.when ?? '').replace(/\s+/g, ' ').trim();
+        if (comingIsPast(when, m.meetingDate, today)) continue;
         seen.add(key);
-        items.push({
-          item: upcoming.item,
-          when: upcoming.when ?? '',
-          href: noteHref(m.id, digest.headline),
-          body: m.body,
-        });
-        if (items.length >= 5) return items;
+        items.push({ item, when });
+        if (items.length >= 4) break;
       }
+      if (!items.length) continue;
+      groups.push({
+        headline: digest.headline,
+        href: noteHref(m.id, digest.headline),
+        who: comingWho(m.title, m.body),
+        date: shortDate(m.meetingDate, false),
+        context: comingContext(digest.summary),
+        items,
+      });
+      if (groups.length >= 3) break;
     }
-    return items;
+    return groups;
   }
 
   /** Readers so far, the next goal, and the invite this visitor came in on (link first, then the remembered cookie). */

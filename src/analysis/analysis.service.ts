@@ -90,11 +90,11 @@ const DIGEST_FORMAT: Anthropic.JSONOutputFormat = {
       },
       upcoming: {
         type: 'array',
-        description: 'Things scheduled or promised for future meetings, hearings, deadlines.',
+        description: 'Later meetings, hearings, deadlines, or handoffs the transcript actually scheduled. Each line has to make sense on its own, away from this recap: name the draft, lease, payment, or project. Leave out a step the transcript did not state.',
         items: obj(
           {
-            item: { type: 'string' },
-            when: { type: 'string', description: 'When it happens, or an empty string if the transcript does not say.' },
+            item: { type: 'string', description: 'The next step, with its subject named. "Clean copy of the Tourism Advisory Board draft emailed to members", not "clean copy of the draft".' },
+            when: { type: 'string', description: 'When it happens, in the transcript\'s words, or an empty string if it does not say.' },
           },
           ['item', 'when'],
         ),

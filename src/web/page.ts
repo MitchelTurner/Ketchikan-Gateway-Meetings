@@ -83,12 +83,17 @@ fieldset{border:0;padding:0;margin:20px 0 0}legend{font:500 13.5px/1.4 var(--san
 p.who{margin:0 0 8px;font:400 13.5px/1.45 var(--sans);color:var(--muted)}
 p.who span{margin-right:6px;font:600 11px/1 var(--sans);letter-spacing:.04em;text-transform:uppercase;color:var(--text-2)}
 .coming{border-top:1px solid var(--line);margin-top:28px;padding-top:36px}
-.coming ul{list-style:none;margin:14px 0 0;padding:0}
-.coming li{padding:14px 0;border-bottom:1px solid var(--line)}
-.coming li:last-child{border-bottom:0;padding-bottom:0}
-.coming a{font-weight:600;text-decoration:none}
-.coming a:hover{color:var(--teal)}
-.coming .meta{display:block;font-size:13.5px;color:var(--muted);margin-top:2px}
+.coming .group{padding:20px 0 4px}
+.coming .group + .group{border-top:1px solid var(--line);margin-top:8px}
+.coming h3{font-size:18.5px;line-height:1.3;letter-spacing:-.02em;margin:0}
+.coming h3 a{font-weight:600;text-decoration:none}
+.coming h3 a:hover{color:var(--teal)}
+.coming .who{margin:6px 0 0;font:400 13.5px/1.4 var(--sans);color:var(--muted)}
+.coming .dek{margin:8px 0 0;max-width:40em;font:400 15.5px/1.55 var(--sans);color:var(--text-2)}
+.coming ul{list-style:none;margin:12px 0 0;padding:0}
+.coming li{padding:10px 0;border-top:1px solid var(--line);font:500 15.5px/1.45 var(--sans);color:var(--text)}
+.coming li:last-child{padding-bottom:2px}
+.coming .meta{display:block;margin-top:3px;font:400 13.5px/1.4 var(--sans);color:var(--muted)}
 .docket-empty[hidden]{display:none}
 #docket-filter{margin:0 0 12px}
 .hint{font:400 13px/1.5 var(--sans);color:var(--muted);margin:10px 0 0}
@@ -943,21 +948,100 @@ function membersLine(body: string): string {
 export interface ComingItem {
   item: string;
   when: string;
-  href: string;
-  body: string;
 }
 
-/** What the latest meetings said happens next, each line linking back to that recap. */
-export function comingSection(items: ComingItem[]): string {
-  if (!items.length) return '';
+/** One meeting's next steps, with enough of the recap that "the draft" has a subject. */
+export interface ComingGroup {
+  headline: string;
+  href: string;
+  /** The committee or board, when the archive title names it. */
+  who: string;
+  /** When that meeting was held, e.g. "Oct 24, 2026". */
+  date: string;
+  /** One or two sentences from the recap. */
+  context: string;
+  items: ComingItem[];
+}
+
+const COMING_MONTH: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+function comingMonth(word: string): number {
+  const w = word.toLowerCase();
+  if (w.startsWith('sept')) return 8;
+  return COMING_MONTH[w.slice(0, 3)] ?? -1;
+}
+
+/**
+ * The first calendar date named in a "when" line, as UTC noon.
+ * A date that falls before the meeting is the next year: an October meeting
+ * saying "Jan. 21" means January of the following year. No day number means
+ * no date ("late January", "30 to 45 days").
+ */
+export function comingDate(when: string, meeting: Date | null): Date | null {
+  const m = String(when ?? '').match(
+    /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:\s*,?\s*(20\d{2}))?/i,
+  );
+  if (!m) return null;
+  const month = comingMonth(m[1]);
+  const day = Number(m[2]);
+  if (month < 0 || day < 1 || day > 31) return null;
+  let year = m[3] ? Number(m[3]) : NaN;
+  if (!year) {
+    const base = meeting ?? new Date();
+    year = base.getUTCFullYear();
+    if (meeting && Date.UTC(year, month, day) < Date.UTC(meeting.getUTCFullYear(), meeting.getUTCMonth(), meeting.getUTCDate())) year += 1;
+  }
+  return new Date(Date.UTC(year, month, day, 12));
+}
+
+/** A named date that is already over. Timing with no calendar day stays. */
+export function comingIsPast(when: string, meeting: Date | null, today: Date): boolean {
+  const at = comingDate(when, meeting);
+  if (!at) return false;
+  const stamp = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return stamp(at) < stamp(today);
+}
+
+/** The committee named in the archive title, rather than the broad bucket it was filed under. */
+export function comingWho(title: string, body: string): string {
+  const parts = meetingParts(title, body)
+    .map((p) => p.replace(/\s+(?:(?:quarterly|special|regular|annual|organizational)\s+)?meeting$/i, '').trim())
+    .filter(Boolean);
+  if (parts.length) return parts.join(' · ');
+  return body === 'Other' ? 'Ketchikan Gateway Borough' : body;
+}
+
+/** First two sentences of the recap, so a next step is read next to what it is about. "Oct. 22" stays one sentence. */
+export function comingContext(summary: string): string {
+  const para = String(summary ?? '').trim().split(/\n\s*\n/)[0]?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!para) return '';
+  const sentences = para.split(/(?<=[.!?])\s+(?=[A-Z])/).map((s) => s.trim()).filter(Boolean);
+  let out = '';
+  for (const s of sentences.slice(0, 2)) {
+    const next = out ? `${out} ${s}` : s;
+    if (out && next.length > 320) break;
+    out = next;
+  }
+  return out;
+}
+
+/** What the latest meetings said happens next. Each group is one meeting, so the subject is on the page. */
+export function comingSection(groups: ComingGroup[]): string {
+  if (!groups.length) return '';
+  const blocks = groups
+    .map((g) => {
+      const who = [g.who, g.date].filter(Boolean).join(' · ');
+      const lines = g.items
+        .map((c) => `<li>${esc(c.item)}${c.when ? `<span class="meta">${esc(c.when)}</span>` : ''}</li>`)
+        .join('');
+      return `<div class="group"><h3><a href="${esc(g.href)}">${esc(g.headline)}</a></h3>${who ? `<p class="who">${esc(who)}</p>` : ''}${g.context ? `<p class="dek">${esc(g.context)}</p>` : ''}<ul>${lines}</ul></div>`;
+    })
+    .join('');
   return `<section class="coming" id="coming"><h2 class="rubric">Coming up</h2>
 <p class="muted">What the latest meetings said happens next.</p>
-<ul>${items
-    .map((c) => {
-      const meta = [c.when, c.body].filter(Boolean).map((s) => esc(s)).join(' · ');
-      return `<li><a href="${esc(c.href)}">${esc(c.item)}</a>${meta ? `<span class="meta">${meta}</span>` : ''}</li>`;
-    })
-    .join('')}</ul></section>`;
+${blocks}</section>`;
 }
 
 export interface NoteHit {
@@ -1108,7 +1192,7 @@ const METHOD = `<ol class="method">
 </ol>
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
 
-export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null, coming: ComingItem[] = []) => {
+export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null, coming: ComingGroup[] = []) => {
   // Lead with the newest written recap; fall back to a docket headline so the page is never empty.
   const draft = work.find((w) => w.headline);
   const lead = recent[0]
