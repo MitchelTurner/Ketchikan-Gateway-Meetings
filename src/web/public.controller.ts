@@ -12,7 +12,7 @@ import {
 } from '../referrals';
 import {
   bodyCheckboxes, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
-  topicsIndexPage, WorkHit,
+  topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readCookie } from './stats.service';
 
@@ -68,13 +68,39 @@ export class PublicController {
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
   async home(@Req() req: Request) {
-    const [recent, work, archiveCount, growth] = await Promise.all([
+    const [recent, work, archiveCount, growth, week] = await Promise.all([
       this.publishedHits('', '', 5),
       this.workHits(),
       this.prisma.meeting.count(),
       this.growth(req),
+      this.weekBrief(),
     ]);
-    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks', await this.topicOptions(), growth);
+    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks', await this.topicOptions(), growth, week);
+  }
+
+  /**
+   * Meetings from the last seven days. When the Borough did not meet, the seven days
+   * ending on the newest written recap, so the paragraph still says what happened.
+   */
+  private async weekBrief(): Promise<WeekBrief | null> {
+    const meetings = await this.prisma.meeting.findMany({
+      where: { analysis: { is: { hiddenAt: null } }, meetingDate: { not: null } },
+      include: { analysis: true },
+      orderBy: [{ meetingDate: 'desc' }, { createdAt: 'desc' }],
+      take: 15,
+    });
+    const rows = meetings.flatMap((m) => {
+      const digest = m.meetingDate ? normalizeDigest(m.analysis?.data) : null;
+      const sentence = digest ? weekSentence(digest.headline) : '';
+      return digest && m.meetingDate && sentence ? [{ at: m.meetingDate, href: noteHref(m.id, digest.headline), sentence }] : [];
+    });
+    if (!rows.length) return null;
+    const today = zonedNoon(config.timezone);
+    const inLastWeek = rows.filter((r) => dayStamp(r.at) >= dayStamp(today) - 6 * 86400000);
+    const current = inLastWeek.length > 0;
+    const picked = current ? inLastWeek : rows.filter((r) => dayStamp(r.at) >= dayStamp(rows[0].at) - 6 * 86400000);
+    const items = picked.slice(0, 5).sort((a, b) => a.at.getTime() - b.at.getTime());
+    return { current, span: spanLabel(items.map((r) => r.at)), items: items.map(({ href, sentence }) => ({ href, sentence })) };
   }
 
   /** Readers so far, the next goal, and the invite this visitor came in on (link first, then the remembered cookie). */
@@ -428,6 +454,30 @@ ${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicChoices(sub.topic
     });
     return page('Saved', `<h1>Saved</h1><p>Your choices are updated.</p>`);
   }
+}
+
+/** Noon UTC on the calendar day in the given zone, so it lines up with meeting dates stored at UTC noon. */
+function zonedNoon(timeZone: string, date = new Date()): Date {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const num = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+  return new Date(Date.UTC(num('year'), num('month') - 1, num('day'), 12));
+}
+
+function dayStamp(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+function spanLabel(dates: Date[]): string {
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  if (!first) return '';
+  if (!last || fmt(first) === fmt(last)) return fmt(first);
+  if (dates.length === 2) return `${fmt(first)} and ${fmt(last)}`;
+  if (first.getUTCMonth() === last.getUTCMonth() && first.getUTCFullYear() === last.getUTCFullYear()) {
+    return `${fmt(first).replace(/ \d+$/, '')} ${first.getUTCDate()}–${last.getUTCDate()}`;
+  }
+  return `${fmt(first)}–${fmt(last)}`;
 }
 
 function notePlain(title: string, body: string, d: MeetingDigest): string {

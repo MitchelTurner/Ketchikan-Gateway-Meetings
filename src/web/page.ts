@@ -85,6 +85,11 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .hero .dek{max-width:38em;font-size:18.5px}
 .facts{margin:18px 0 0;font:400 14.5px/1.5 var(--sans);color:var(--muted)}
 .facts b{color:var(--text);font-weight:600}
+.week{margin:22px 0 0;max-width:40em}
+.week .rubric{margin-bottom:8px}
+.week p{font:400 18px/1.65 var(--sans);color:var(--text);margin:0}
+.week a{color:inherit;text-decoration:underline;text-decoration-color:var(--teal);text-decoration-thickness:1.5px;text-underline-offset:3px}
+.week a:hover{color:var(--teal)}
 .signup{background:transparent;border:0;border-top:1px solid var(--line);border-radius:0;padding:28px 0 0;margin-top:32px;box-shadow:none;scroll-margin-top:16px}
 #docket,#how,#follow,#subscribe,#app{scroll-margin-top:16px}
 .signup h2{font-size:20px;letter-spacing:-.02em;margin:0 0 6px}
@@ -833,6 +838,33 @@ ${topics
   .join('')}</div><p class="hint">Get an in-depth explainer when something big happens on these issues.</p></fieldset>`;
 }
 
+export interface WeekBrief {
+  /** True when at least one of these meetings falls in the last seven days. */
+  current: boolean;
+  /** "Oct 20 and Oct 21", or one day, or a range. */
+  span: string;
+  items: { href: string; sentence: string }[];
+}
+
+/** One paragraph: the date span, then each meeting's headline linked to its recap. */
+export function weekSection(week: WeekBrief | null): string {
+  if (!week?.items.length) return '';
+  const one = week.items.length === 1;
+  const lead = week.current
+    ? `In the past week, ${esc(week.span)}. `
+    : one
+      ? `The latest meeting was ${esc(week.span)}. `
+      : `The latest meetings were ${esc(week.span)}. `;
+  const sentences = week.items.map((item) => `<a href="${esc(item.href)}">${esc(item.sentence)}</a>`).join(' ');
+  return `<section class="week"><h2 class="rubric">The past week</h2><p>${lead}${sentences}</p></section>`;
+}
+
+export function weekSentence(headline: string): string {
+  const s = headline.replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  return /[.!?]$/.test(s) ? s : `${s}.`;
+}
+
 export interface NoteHit {
   id: string;
   title: string;
@@ -946,7 +978,7 @@ const METHOD = `<ol class="method">
 </ol>
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
 
-export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth) => {
+export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null) => {
   // Lead with the newest written recap; fall back to a docket headline so the page is never empty.
   const draft = work.find((w) => w.headline);
   const lead = recent[0]
@@ -987,6 +1019,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
     <p class="kicker">Ketchikan Gateway Borough</p>
     <h1>Every public meeting, in plain language.</h1>
     <p class="dek">What passed, what was debated, what residents said, and what comes next. Written from the official recording, checked against the agenda, and linked to the exact moment in the video.</p>
+    ${weekSection(week)}
     <p class="facts"><b>${archiveCount.toLocaleString('en-US')}</b> meetings on the record · Assembly, School Board and Planning · Free</p>
   </div>
   <aside class="signup" id="subscribe">
