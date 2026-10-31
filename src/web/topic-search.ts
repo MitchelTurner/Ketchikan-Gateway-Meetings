@@ -21,6 +21,8 @@ export function topicTools(
       .replace(/([a-z\d])([A-Z])/g, '$1 $2')
       .replace(/&/g, ' and ')
       .toLowerCase()
+      .replace(/([a-z])(\d)/g, '$1 $2')
+      .replace(/(\d)([a-z])/g, '$1 $2')
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, ' ')
@@ -30,6 +32,8 @@ export function topicTools(
 
   function forms(word: string): string[] {
     const out = [word];
+    const pair: Record<string, string> = { feet: 'foot', foot: 'feet', people: 'person', person: 'people', children: 'child', child: 'children' };
+    if (pair[word]) out.push(pair[word]);
     if (/(?:[sxz]es|[cs]hes)$/.test(word) && word.length > 4) out.push(word.slice(0, -2));
     else if (word.length > 4 && word.endsWith('ies')) out.push(word.slice(0, -3) + 'y');
     else if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) out.push(word.slice(0, -1));
@@ -43,7 +47,13 @@ export function topicTools(
     const variants = forms(word);
     for (let i = 0; i < variants.length; i++) {
       const form = variants[i];
-      if (form.length < 2) continue;
+      // "4" and "7-0" are real queries. A one-letter word is not, or "a" would match everything.
+      if (form.length < 2) {
+        if (/\d/.test(form)) {
+          for (let t = 0; t < tokens.length; t++) if (tokens[t] === form) return true;
+        }
+        continue;
+      }
       for (let t = 0; t < tokens.length; t++) {
         if (tokens[t] === form || (form.length >= 3 && tokens[t].startsWith(form))) return true;
       }
@@ -98,33 +108,35 @@ export function topicTools(
     else if (nameN.startsWith(normalize(query)) || nameN.replace(/ /g, '').startsWith(flat)) score = 400;
     else score = 300;
   } else if (inName > 0) score = 200 + inName * 10;
-  const nameCovers = inName === words.length;
-  const inText = (source: string) => words.some((w) => wordIn(w, normalize(source)));
-  const whySource = !nameCovers
-    ? (inText(description) ? description : latest)
+  const missing = words.filter((w) => !wordIn(w, nameN));
+  const has = (source: string) => missing.some((w) => wordIn(w, normalize(source)));
+  // Prefer the field that holds the word the title left out, so "Griffin" quotes the remembrance, not the title.
+  const whySource = missing.length
+    ? (has(description) ? description : has(latest) ? latest : once ? description : '')
     : once ? description : '';
-  return { score, why: whySource ? clip(whySource, words) : '' };
+  return { score, why: whySource ? clip(whySource, missing) : '' };
 }
 
 /** The browser copy of topicTools, so keystrokes use the same rules as the first paint. */
-export function topicSearchScript(): string {
+export function topicSearchScript(tuck: boolean): string {
   return `<script>(function(){
 ${topicTools.toString()}
 var q=document.getElementById('topic-find'),list=document.getElementById('topic-all'),none=document.getElementById('topic-none'),count=document.getElementById('topic-count');
 if(!q||!list)return;
+var tuck=${tuck ? 'true' : 'false'};
 var rows=Array.prototype.slice.call(list.children);
 function apply(){
   var query=q.value,empty=!query.trim(),shown=[],onceShown=0;
   rows.forEach(function(li){
     var once=li.getAttribute('data-once')==='1';
     var meetings=Number(li.getAttribute('data-meetings'))||0;
-    var result=empty?{score:once?0:1,why:''}:topicTools(li.getAttribute('data-name')||'',li.getAttribute('data-find')||'',li.getAttribute('data-desc')||'',li.getAttribute('data-latest')||'',query,once);
+    var result=empty?{score:!tuck||!once?1:0,why:''}:topicTools(li.getAttribute('data-name')||'',li.getAttribute('data-find')||'',li.getAttribute('data-desc')||'',li.getAttribute('data-latest')||'',query,once);
     var why=li.querySelector('.why');
     if(why){why.textContent=result.why||'';why.hidden=!result.why;}
     li.hidden=result.score===0;
     if(result.score){shown.push({li:li,score:result.score,meetings:meetings,name:(li.getAttribute('data-name')||'').toLowerCase()});if(once)onceShown++;}
   });
-  if(empty) rows.forEach(function(li){list.appendChild(li);});
+  if(empty) rows.slice().sort(function(a,b){return (Number(a.getAttribute('data-order'))||0)-(Number(b.getAttribute('data-order'))||0);}).forEach(function(li){list.appendChild(li);});
   else {
     shown.sort(function(a,b){return b.score-a.score||b.meetings-a.meetings||(a.name<b.name?-1:a.name>b.name?1:0);});
     shown.forEach(function(row){list.appendChild(row.li);});

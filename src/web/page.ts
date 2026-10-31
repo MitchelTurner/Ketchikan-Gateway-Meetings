@@ -1578,6 +1578,7 @@ export function topicsIndexPage(board: TopicsBoard, query = ''): string {
 <h1>The issues, meeting by meeting</h1>
 <p class="dek">Some questions take months. The bars show which issues come up most, and which ones are coming up more often than they used to.</p>
 <p class="facts">${facts}</p>
+${tuck ? `<p class="note"><a href="#topic-find">Search</a> also finds the ${board.once.toLocaleString('en-US')} ${board.once === 1 ? 'issue' : 'issues'} from a single meeting, by a place, a project, or something that was said.</p>` : ''}
 <section class="tsec"><h2 class="rubric">${board.trending ? 'Trending' : 'Busiest lately'}</h2><p class="note">${featuredNote}</p><ol class="trank">${featuredRows}</ol></section>
 <section class="tsec"><h2 class="rubric">Most discussed</h2><p class="note">Counted across every meeting on record. The longest bar is the issue that has come up most.</p><ol class="trank">${popularRows}</ol></section>
 <section class="tsec" id="all"><h2 class="rubric">${listTitle}</h2><p class="note">${listNote}</p>
@@ -1588,7 +1589,7 @@ export function topicsIndexPage(board: TopicsBoard, query = ''): string {
 </section>
 <div class="signup"><h2>Follow an issue</h2><p>Pick topics when you <a href="/#subscribe">subscribe</a>, or from the link at the bottom of any email.</p></div>
 </div></main>
-${topicSearchScript()}`,
+${topicSearchScript(tuck)}`,
     { seo: { description, canonical: wanted ? undefined : '/topics', noindex: Boolean(wanted) } },
   );
 }
