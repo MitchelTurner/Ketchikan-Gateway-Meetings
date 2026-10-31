@@ -923,8 +923,16 @@ export function cardVote(actions: { outcome?: string; vote?: string }[] | undefi
     ? outcome.charAt(0).toUpperCase() + outcome.slice(1).toLowerCase()
     : '';
   if (short && new RegExp(`^${short}\\b`, 'i').test(vote)) vote = vote.slice(short.length).replace(/^[\s,–-]+/, '').trim();
-  const label = /^unanimous$/i.test(vote) ? (short ? `${short}, unanimous` : 'Unanimous') : short && vote ? `${short} ${vote}` : vote || short;
-  return label.length > 48 ? '' : label;
+  const bareCount = vote.match(/^unanimous\s*\(([^)]+)\)$/i);
+  if (bareCount && /^\d+\s*–\s*\d+$/.test(bareCount[1].trim())) vote = bareCount[1].trim();
+  let label: string;
+  if (/^unanimous\b/i.test(vote)) {
+    const rest = `unanimous${vote.slice(9)}`;
+    label = short ? `${short}, ${rest}` : rest.charAt(0).toUpperCase() + rest.slice(1);
+  } else {
+    label = short && vote ? `${short} ${vote}` : vote || short;
+  }
+  return label.length > 80 ? '' : label;
 }
 
 export interface ComingItem {
@@ -938,7 +946,7 @@ export interface ComingItem {
 export function comingSection(items: ComingItem[]): string {
   if (!items.length) return '';
   return `<section class="coming" id="coming"><h2 class="rubric">Coming up</h2>
-<p class="muted">What the latest meetings scheduled, or said would happen next.</p>
+<p class="muted">What the latest meetings said happens next.</p>
 <ul>${items
     .map((c) => {
       const meta = [c.when, c.body].filter(Boolean).map((s) => esc(s)).join(' · ');
