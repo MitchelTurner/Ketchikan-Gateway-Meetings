@@ -200,6 +200,32 @@ a.hit:hover h2{color:var(--teal)}
 .linkbox input{flex:1;min-width:0;font:400 14.5px/1.3 var(--mono)}
 .linkbox button{width:auto;margin:0;padding:0 18px}
 .kit .share{justify-content:flex-start}
+/* Topics: bars for how often an issue comes up, strips for the last six months. */
+.tsec{margin-top:36px}
+.tsec .note{font:400 14.5px/1.5 var(--sans);color:var(--muted);margin:0 0 4px}
+.trank,.tlist{list-style:none;margin:14px 0 0;padding:0}
+.trank a,.tlist a{display:grid;gap:2px 12px;padding:14px 0;text-decoration:none;border-bottom:1px solid var(--line);align-items:center}
+.trank a{grid-template-columns:22px minmax(0,1fr) 72px}
+.trank .rank{grid-row:1 / span 2;font:600 16px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.trank .rank.top{color:var(--teal)}
+.trank .spark-slot{grid-column:3;grid-row:1 / span 2}
+.trank h3,.tlist h3{font-size:16.5px;line-height:1.3;letter-spacing:-.02em;margin:0}
+.trank a:hover h3,.tlist a:hover h3{color:var(--teal)}
+.trank .meta{margin:3px 0 8px}
+.meter{display:block;height:7px;border-radius:999px;background:var(--surface-2);overflow:hidden}
+.meter span{display:block;height:100%;border-radius:999px;background:var(--teal)}
+.spark{display:flex;align-items:flex-end;gap:3px;height:32px}
+.spark span{flex:1 1 0;display:block;border-radius:2px;background:var(--line-2);min-height:3px}
+.spark span.on{background:var(--teal)}
+.flag{display:inline-flex;align-items:center;height:18px;margin-left:6px;padding:0 7px;border-radius:999px;font:600 10.5px/1 var(--sans);letter-spacing:.03em;text-transform:uppercase;vertical-align:1px}
+.flag.up{color:var(--green);background:color-mix(in srgb,var(--green) 16%,transparent)}
+.flag.new{color:var(--teal);background:color-mix(in srgb,var(--teal) 16%,transparent)}
+.tlist a{grid-template-columns:minmax(0,1fr)}
+.tlist .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;margin-top:7px}
+.tlist .n{font:500 13px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.tlist li[hidden]{display:none}
+.topic-find{margin:0 0 4px}
+.topic-find label{margin:0 0 8px}
 .score{display:flex;gap:16px;align-items:center;margin:26px 0 4px;font:400 14.5px/1.45 var(--sans);color:var(--text-2)}
 .score strong{font:600 40px/1 var(--sans);letter-spacing:-.04em;color:var(--text)}
 .score b{color:var(--text)}
@@ -1245,34 +1271,185 @@ ${!opts.draft && opts.growth ? signupCallout(opts.growth) : ''}
   );
 }
 
-export interface TopicSummary {
+export interface TopicInput {
+  slug: string;
+  name: string;
+  description: string;
+  /** One or two sentences from the newest meeting that touched it. */
+  latest: string;
+  /** Visible meetings, including any whose date was never recorded. */
+  meetings: number;
+  dates: Date[];
+}
+
+export interface TopicBar {
   slug: string;
   name: string;
   description: string;
   meetings: number;
+  recent: number;
+  prior: number;
   lastDate: string;
   latest: string;
+  /** Meeting counts for the last six months, oldest first. */
+  months: number[];
+  /** Rising faster than its own previous 90 days, or new in this window. */
+  heat: 'up' | 'new' | 'steady' | 'quiet';
 }
 
-export function topicsIndexPage(topics: TopicSummary[]): string {
-  const list = topics.length
-    ? `<ul class="docket">${topics
-        .map(
-          (t) => `<li><a href="/topics/${esc(t.slug)}" style="grid-template-columns:minmax(0,1fr) auto"><div><h3>${esc(t.name)}</h3><p class="headline">${esc(t.description)}</p>${t.latest ? `<p class="meta" style="margin-top:6px">Latest${t.lastDate ? `, ${esc(t.lastDate)}` : ''}: ${esc(t.latest)}</p>` : ''}</div><span class="state done">${t.meetings} meeting${t.meetings === 1 ? '' : 's'}</span></a></li>`,
-        )
-        .join('')}</ul>`
-    : '<p class="empty">Topics appear here once issues have been picked out of the recaps.</p>';
-  const description = 'The issues that keep coming back to Ketchikan Gateway Borough meetings, each followed from meeting to meeting in plain language.';
+export interface TopicsBoard {
+  total: number;
+  /** Topics with at least one meeting in the last 90 days. */
+  active: number;
+  rising: number;
+  /** Short month names for the strips, oldest first. */
+  monthLabels: string[];
+  /** True when enough issues are actually rising to call the section that. */
+  trending: boolean;
+  featured: TopicBar[];
+  popular: TopicBar[];
+  all: TopicBar[];
+}
+
+const DAY = 86_400_000;
+
+function dayStamp(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * Popular is lifetime meetings. Trending is the last 90 days against the 90
+ * days before that. The strip is the last six calendar months.
+ */
+export function buildTopicsBoard(topics: TopicInput[], today: Date): TopicsBoard {
+  const end = dayStamp(today);
+  const recentFrom = end - 89 * DAY;
+  const priorFrom = end - 179 * DAY;
+  const startMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 5, 1, 12));
+  const monthLabels = Array.from({ length: 6 }, (_, i) =>
+    new Date(Date.UTC(startMonth.getUTCFullYear(), startMonth.getUTCMonth() + i, 1, 12)).toLocaleDateString('en-US', {
+      month: 'short',
+      timeZone: 'UTC',
+    }),
+  );
+  const bars = topics
+    .map((t) => {
+      const dates = t.dates.filter((d) => !Number.isNaN(d.getTime()));
+      const recent = dates.filter((d) => dayStamp(d) >= recentFrom && dayStamp(d) <= end).length;
+      const prior = dates.filter((d) => dayStamp(d) >= priorFrom && dayStamp(d) < recentFrom).length;
+      const months = [0, 0, 0, 0, 0, 0];
+      for (const d of dates) {
+        const i = (d.getUTCFullYear() - startMonth.getUTCFullYear()) * 12 + (d.getUTCMonth() - startMonth.getUTCMonth());
+        if (i >= 0 && i < 6) months[i]++;
+      }
+      const last = dates.reduce<Date | null>((best, d) => (!best || d.getTime() > best.getTime() ? d : best), null);
+      const heat: TopicBar['heat'] =
+        recent === 0 ? 'quiet' : prior === 0 && recent >= 2 ? 'new' : recent >= 2 && recent > prior ? 'up' : 'steady';
+      return {
+        slug: t.slug,
+        name: t.name,
+        description: t.description,
+        meetings: Math.max(t.meetings, dates.length),
+        recent,
+        prior,
+        lastDate: last ? shortDate(last, false) : '',
+        latest: t.latest,
+        months,
+        heat,
+      };
+    })
+    .filter((t) => t.meetings > 0);
+  const byRecent = (a: TopicBar, b: TopicBar) => b.recent - a.recent || b.recent - b.prior - (a.recent - a.prior) || b.meetings - a.meetings;
+  const risers = bars.filter((t) => t.heat === 'up' || t.heat === 'new').sort(byRecent);
+  const trending = risers.length >= 3;
+  const featured = (trending ? risers : bars.filter((t) => t.recent > 0).sort(byRecent)).slice(0, 6);
+  const all = [...bars].sort((a, b) => b.meetings - a.meetings || a.name.localeCompare(b.name));
+  return {
+    total: all.length,
+    active: bars.filter((t) => t.recent > 0).length,
+    rising: risers.length,
+    monthLabels,
+    trending,
+    featured,
+    popular: all.slice(0, 8),
+    all,
+  };
+}
+
+export function topicsIndexPage(board: TopicsBoard): string {
+  const description = 'Which Ketchikan issues come up most often, and which ones are coming up more than they used to. Each topic follows one issue from meeting to meeting.';
+  const empty = '<p class="empty">Topics appear here once issues have been picked out of the recaps.</p>';
+  if (!board.total) {
+    return shell(
+      `Ketchikan issues to follow · ${config.newsletterName}`,
+      `<main class="wrap"><div class="article"><div class="kicker">Topics</div><h1>The issues, meeting by meeting</h1>${empty}</div></main>`,
+      { seo: { description, canonical: '/topics' } },
+    );
+  }
+  const peakRecent = Math.max(...board.featured.map((t) => t.recent), 1);
+  const peakAll = Math.max(...board.all.map((t) => t.meetings), 1);
+  const flag = (t: TopicBar) => (t.heat === 'up' ? '<span class="flag up">Rising</span>' : t.heat === 'new' ? '<span class="flag new">New</span>' : '');
+  const bar = (n: number, max: number) => `<span class="meter" aria-hidden="true"><span style="width:${n && max ? Math.max(2, Math.round((n / max) * 100)) : 0}%"></span></span>`;
+  const spark = (t: TopicBar) => {
+    const peak = Math.max(...t.months, 1);
+    const bits = t.months
+      .map((n, i) => {
+        const h = n ? Math.max(22, Math.round((n / peak) * 100)) : 12;
+        return `<span class="${n ? 'on' : ''}" style="height:${h}%" title="${esc(board.monthLabels[i])}: ${n}"></span>`;
+      })
+      .join('');
+    const caption = t.months.map((n, i) => `${board.monthLabels[i]} ${n}`).join(', ');
+    return `<span class="spark" role="img" aria-label="Meetings by month, oldest first: ${esc(caption)}">${bits}</span>`;
+  };
+  const featuredNote = board.trending
+    ? 'More meetings in the last 90 days than in the 90 days before. The strip is the last six months, oldest on the left.'
+    : 'The issues that came up most often in the last 90 days. The strip is the last six months, oldest on the left.';
+  const featuredRows = board.featured
+    .map((t, i) => {
+      const pace =
+        t.prior > 0
+          ? `${t.recent} in the last 90 days, ${t.prior} in the 90 before`
+          : `${t.recent} in the last 90 days`;
+      return `<li><a href="/topics/${esc(t.slug)}"><span class="rank${i === 0 ? ' top' : ''}">${i + 1}</span><span class="spark-slot">${spark(t)}</span><span><h3>${esc(t.name)}</h3><p class="meta">${esc(pace)}${t.lastDate ? ` · Latest ${esc(t.lastDate)}` : ''}${flag(t)}</p>${bar(t.recent, peakRecent)}</span></a></li>`;
+    })
+    .join('');
+  const popularRows = board.popular
+    .map(
+      (t, i) =>
+        `<li><a href="/topics/${esc(t.slug)}" style="grid-template-columns:22px minmax(0,1fr)"><span class="rank${i === 0 ? ' top' : ''}">${i + 1}</span><span><h3>${esc(t.name)}</h3><p class="meta">${t.meetings} meeting${t.meetings === 1 ? '' : 's'}${t.lastDate ? ` · Latest ${esc(t.lastDate)}` : ''}</p>${bar(t.meetings, peakAll)}</span></a></li>`,
+    )
+    .join('');
+  const allRows = board.all
+    .map(
+      (t) =>
+        `<li data-find="${esc(`${t.name} ${t.description}`.toLowerCase())}"><a href="/topics/${esc(t.slug)}"><h3>${esc(t.name)}</h3><span class="row">${bar(t.meetings, peakAll)}<span class="n">${t.meetings}</span></span></a></li>`,
+    )
+    .join('');
   return shell(
     `Ketchikan issues to follow · ${config.newsletterName}`,
-    `<main class="wrap" style="max-width:820px"><div class="article">
+    `<main class="wrap"><div class="article">
 <div class="kicker">Topics</div>
 <h1>The issues, meeting by meeting</h1>
-<p class="dek">Some questions take months to settle. Each topic follows one issue across every meeting where it came up, with an in-depth explainer whenever something big happens.</p>
-<h2 class="rubric" style="margin-top:30px">Following now</h2>
-${list}
-<div class="signup" style="margin-top:36px"><h2>Follow an issue</h2><p>Pick topics when you <a href="/#subscribe">subscribe</a>, or from the link at the bottom of any email.</p></div>
-</div></main>`,
+<p class="dek">Some questions take months. The bars show which issues come up most, and which ones are coming up more often than they used to.</p>
+<p class="facts"><b>${board.total.toLocaleString('en-US')}</b> issues · <b>${board.active.toLocaleString('en-US')}</b> in the last 90 days · <b>${board.rising.toLocaleString('en-US')}</b> rising</p>
+<section class="tsec"><h2 class="rubric">${board.trending ? 'Trending' : 'Busiest lately'}</h2><p class="note">${featuredNote}</p><ol class="trank">${featuredRows}</ol></section>
+<section class="tsec"><h2 class="rubric">Most discussed</h2><p class="note">Counted across every meeting on record. The longest bar is the issue that has come up most.</p><ol class="trank">${popularRows}</ol></section>
+<section class="tsec" id="all"><h2 class="rubric">Every issue</h2><p class="note">Longest bars first. ${board.total.toLocaleString('en-US')} in all.</p>
+<div class="topic-find"><label for="topic-find">Find an issue</label><input id="topic-find" type="search" placeholder="Harbor, budget, hospital…" autocomplete="off" enterkeyhint="search"></div>
+<ul class="tlist" id="topic-all">${allRows}</ul>
+<p id="topic-none" class="empty" hidden>No issue with that name.</p>
+</section>
+<div class="signup"><h2>Follow an issue</h2><p>Pick topics when you <a href="/#subscribe">subscribe</a>, or from the link at the bottom of any email.</p></div>
+</div></main>
+<script>(function(){
+var q=document.getElementById('topic-find'),rows=document.querySelectorAll('#topic-all li'),none=document.getElementById('topic-none');
+if(!q)return;
+q.addEventListener('input',function(){
+  var s=q.value.trim().toLowerCase(),n=0;
+  rows.forEach(function(li){var show=!s||(li.getAttribute('data-find')||'').indexOf(s)!==-1;li.hidden=!show;if(show)n++;});
+  if(none)none.hidden=n!==0;
+});
+})();</script>`,
     { seo: { description, canonical: '/topics' } },
   );
 }

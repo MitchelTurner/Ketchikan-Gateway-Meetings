@@ -12,7 +12,7 @@ import {
 } from '../referrals';
 import {
   bodyCheckboxes, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
-  topicsIndexPage, WeekBrief, weekSentence, WorkHit,
+  buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readCookie } from './stats.service';
 
@@ -160,12 +160,11 @@ export class PublicController {
         name: t.name,
         description: t.description,
         meetings: visible.length,
-        lastDate: shortDate(latest?.meeting.meetingDate, false),
         latest: latest?.summary ?? '',
-        sort: latest?.meeting.meetingDate?.getTime() ?? 0,
+        dates: visible.flatMap((l) => (l.meeting.meetingDate ? [l.meeting.meetingDate] : [])),
       }];
     });
-    return topicsIndexPage(rows.sort((a, b) => b.sort - a.sort));
+    return topicsIndexPage(buildTopicsBoard(rows, zonedNoon(config.timezone)));
   }
 
   @Get('topics/:slug')
