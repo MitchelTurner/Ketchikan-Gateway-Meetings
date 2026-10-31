@@ -102,6 +102,7 @@ model Subscriber {
   email       String           @unique
   status      SubscriberStatus @default(PENDING)
   token       String           @unique // random; used for confirm / unsubscribe links
+  confirmExpiresAt DateTime? // confirmation link stops working then; null on older signups, which still confirm
   bodies      String[] // empty = every body
   topics      String[] // Topic slugs for deep-dive emails; empty = none
   recaps      Boolean          @default(true) // false = topic emails only

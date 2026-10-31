@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { emptyRecording } from '../analysis/empty-recording';
 import { config } from '../config';
+import { confirmEmail, confirmExpiresAt, confirmStillOpen, CONFIRM_HOURS } from '../email/confirm';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
 import { BODIES, esc, randomToken, shortDate } from '../util';
@@ -397,20 +398,17 @@ export class PublicController {
       const code = REF_PATTERN.test(String(body.ref ?? '')) ? String(body.ref) : inviteCode(req);
       const inviter = code ? await this.prisma.subscriber.findFirst({ where: { refCode: code }, select: { id: true, email: true, confirmedAt: true } }) : null;
       const referredById = inviter?.confirmedAt && inviter.email !== email ? inviter.id : null;
+      const expires = confirmExpiresAt();
       const sub = existing
         ? await this.prisma.subscriber.update({
             where: { email },
-            data: { status: 'PENDING', bodies, topics, recaps, token: randomToken(), ...(existing.referredById || !referredById ? {} : { referredById }) },
+            data: { status: 'PENDING', bodies, topics, recaps, token: randomToken(), confirmExpiresAt: expires, ...(existing.referredById || !referredById ? {} : { referredById }) },
           })
-        : await this.prisma.subscriber.create({ data: { email, bodies, topics, recaps, token: randomToken(), referredById } });
+        : await this.prisma.subscriber.create({ data: { email, bodies, topics, recaps, token: randomToken(), confirmExpiresAt: expires, referredById } });
       try {
         const url = `${config.publicBaseUrl}/confirm/${sub.token}`;
-        await this.email.send({
-          to: email,
-          subject: `Confirm your ${config.newsletterName} subscription`,
-          html: `<p>Tap to confirm you want ${esc(config.newsletterName)} emails:</p><p><a href="${esc(url)}">${esc(url)}</a></p><p>If you didn't sign up, ignore this and you won't hear from us.</p><p style="color:#5b6675;font-size:12px">${esc(config.mailingAddress)}</p>`,
-          text: `Confirm your subscription: ${url}\n\nIf you didn't sign up, ignore this.\n\n${config.mailingAddress}`,
-        });
+        const message = confirmEmail({ url, siteUrl: config.publicBaseUrl, mailingAddress: config.mailingAddress });
+        await this.email.send({ to: email, subject: message.subject, html: message.html, text: message.text });
       } catch (err) {
         this.log.error(`Confirmation email failed: ${(err as Error).message}`);
         res.status(502);
@@ -432,6 +430,9 @@ export class PublicController {
   async confirm(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     let sub = await this.prisma.subscriber.findUnique({ where: { token } });
     if (!sub) return page('Link expired', `<h1>That link didn't work</h1><p><a href="/">Sign up again</a>.</p>`);
+    if (sub.status !== 'CONFIRMED' && !confirmStillOpen(sub.confirmExpiresAt)) {
+      return page('Link expired', `<h1>That link expired</h1><p>Confirmation links last ${CONFIRM_HOURS} hours. <a href="/">Sign up again</a>.</p>`);
+    }
     if (sub.status !== 'CONFIRMED') {
       const firstTime = !sub.confirmedAt;
       sub = await this.prisma.subscriber.update({ where: { id: sub.id }, data: { status: 'CONFIRMED', confirmedAt: sub.confirmedAt ?? new Date() } });
