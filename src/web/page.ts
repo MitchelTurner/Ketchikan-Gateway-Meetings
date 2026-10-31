@@ -114,6 +114,8 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .docket a:hover h3{color:var(--teal)}
 .docket .parts{list-style:none;margin:0 0 4px;padding:0;font:400 13.5px/1.5 var(--sans);color:var(--muted)}
 .docket .headline{font:400 15px/1.5 var(--sans);color:var(--text-2);margin:4px 0 0}
+.docket .marks{display:flex;flex-direction:column;align-items:flex-end;gap:6px;align-self:start}
+.docket .kind{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:999px;font:500 11.5px/1 var(--sans);color:var(--text-2);background:var(--surface-2);white-space:nowrap}
 .state{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 10px;border-radius:999px;font:500 11.5px/1 var(--sans);color:var(--muted);background:var(--surface-2);white-space:nowrap;align-self:start}
 .state::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
 .state.work{color:var(--indigo)}.state.work::before{animation:pulse 2s infinite}.state.ready{color:var(--teal)}.state.done{color:var(--muted)}.state.stopped{color:var(--rose)}
@@ -814,13 +816,31 @@ function docketDate(date: string): string {
   return m ? `${esc(m[1])}<b>${esc(m[2])}</b>${esc(m[3])}` : `<b>${esc(date || '—')}</b>`;
 }
 
+/** Agenda lines worth showing. A bare "Regular" adds nothing once the headline is the title. */
+function sessionParts(title: string, body: string): string[] {
+  return meetingParts(title, body).filter((p) => !/^(regular|special)$/i.test(p));
+}
+
+/** The recap headline when one exists; otherwise what the archive title says the meeting was. */
+function docketTitle(h: WorkHit): string {
+  if (h.headline) return h.headline;
+  const parts = sessionParts(h.title, h.body);
+  if (parts.length) return parts.join(' · ');
+  return `${h.body === 'Other' ? 'Borough' : h.body} meeting`;
+}
+
 export function workList(hits: WorkHit[]): string {
   if (!hits.length) return '';
   return `<ul class="docket">${hits
-    .map(
-      (h) => `<li><a href="/meetings/${esc(h.id)}"><div class="when">${docketDate(h.date)}</div>
-<div><h3>${esc(h.body)}</h3>${partsList(h.title, h.body)}${h.headline ? `<p class="headline">${esc(h.headline)}</p>` : ''}</div>${publicPill(h.status)}</a></li>`,
-    )
+    .map((h) => {
+      const title = docketTitle(h);
+      const parts = h.headline ? sessionParts(h.title, h.body) : [];
+      const href = h.headline ? noteHref(h.id, h.headline) : `/meetings/${encodeURIComponent(h.id)}`;
+      const kind = h.body === 'Other' ? 'Other' : h.body;
+      return `<li><a href="${esc(href)}"><div class="when">${docketDate(h.date)}</div>
+<div><h3>${esc(title)}</h3>${parts.length ? `<ul class="parts">${parts.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>
+<div class="marks">${publicPill(h.status)}<span class="kind">${esc(kind)}</span></div></a></li>`;
+    })
     .join('')}</ul>`;
 }
 
