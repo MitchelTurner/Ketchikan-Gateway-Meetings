@@ -23,6 +23,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY package.json ./
+COPY Ketchikan.Vote.png ./Ketchikan.Vote.png
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 ENV NODE_ENV=production

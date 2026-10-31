@@ -31,6 +31,12 @@ a:hover{color:var(--teal);text-decoration-color:currentColor}
 .wrap{max-width:720px;margin:0 auto;padding:0 18px}
 .narrow{max-width:680px}
 
+/* The site mark. The file has transparent padding, so the margins pull the boat flush with the column. */
+.brand{padding:8px 0 0}
+.brand a{display:inline-block;line-height:0;text-decoration:none}
+.brand a:hover{opacity:.84}
+.brand img{display:block;width:148px;height:auto;margin:-18px 0 -24px -18px}
+
 /* Movement is the icon bar at the bottom. */
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--bg);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 .tabbar-in{max-width:720px;margin:0 auto;display:flex}
@@ -306,6 +312,8 @@ footer.site .where{margin-top:2px;font:400 12.5px/1.4 var(--mono);letter-spacing
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}html{scroll-behavior:auto}}
 @media (min-width:640px){
   .wrap{padding:0 28px}
+  .brand{padding:14px 0 0}
+  .brand img{width:168px;margin:-22px 0 -28px -30px}
   .hero{padding:40px 0 8px}
   .hero h1{font-size:42px}
   .article{padding:36px 0 24px}
@@ -424,7 +432,7 @@ const GA_TAG = `<!-- Google tag (gtag.js) -->
 </script>`;
 
 /** Full document: the page name, its main element, the footer, and the bottom icon bar. */
-const APP_HEAD = `<link rel="manifest" href="/manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Recaps"><link rel="apple-touch-icon" href="/icon-192.png">`;
+const APP_HEAD = `<link rel="icon" href="/logo.png" type="image/png"><link rel="manifest" href="/manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Recaps"><link rel="apple-touch-icon" href="/logo.png">`;
 
 /** The meetings a phone can opt into. "Other" is a leftover bucket, not a choice. */
 function notifyChoices(): string {
@@ -604,10 +612,12 @@ navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSub
 
 function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo; css?: string; bodyClass?: string } = {}): string {
   const desk = opts.bodyClass === 'desk';
+  const brand = desk ? '' : `<header class="brand"><div class="wrap"><a href="/"><img src="/logo.png" alt="Ketchikan.Vote" width="1000" height="1000"></a></div></header>`;
   return `<!doctype html><html lang="en"><head>${desk ? '' : GA_TAG}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light"><meta name="theme-color" content="#06080b" media="(prefers-color-scheme: dark)"><meta name="theme-color" content="#fafbfc" media="(prefers-color-scheme: light)">${desk ? '' : APP_HEAD}<title>${esc(title)}</title>
 ${seoTags(title, opts.seo ?? {})}
 <style>${CSS}${opts.css ?? ''}</style></head><body${opts.bodyClass ? ` class="${esc(opts.bodyClass)}"` : ''}>
+${brand}
 ${main}
 ${footer()}
 ${desk ? '' : tabbar()}

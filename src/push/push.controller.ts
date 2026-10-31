@@ -1,7 +1,21 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { BadRequestException, Body, Controller, Get, Header, HttpCode, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ICON_192, ICON_512 } from './icons';
 import { PushService } from './push.service';
+
+/** The uploaded mark, Ketchikan.Vote.png, copied next to the app in the image. */
+let logoBytes: Buffer | undefined;
+function siteLogo(): Buffer | undefined {
+  if (logoBytes) return logoBytes;
+  try {
+    logoBytes = readFileSync(join(process.cwd(), 'Ketchikan.Vote.png'));
+    return logoBytes;
+  } catch {
+    return undefined;
+  }
+}
 
 const SW = `self.addEventListener('install', function() { self.skipWaiting(); });
 self.addEventListener('activate', function(event) { event.waitUntil(self.clients.claim()); });
@@ -12,7 +26,7 @@ self.addEventListener('push', function(event) {
   var title = data.title || 'A new recap is up';
   event.waitUntil(self.registration.showNotification(title, {
     body: data.body || 'Open it to read what the meeting decided.',
-    icon: '/icon-192.png',
+    icon: '/logo.png',
     badge: '/icon-192.png',
     data: { url: data.url || '/' }
   }));
@@ -39,9 +53,7 @@ const MANIFEST = {
   background_color: '#06080b',
   theme_color: '#06080b',
   icons: [
-    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    { src: '/logo.png', sizes: '1000x1000', type: 'image/png', purpose: 'any' },
   ],
 };
 
@@ -67,6 +79,16 @@ export class PushController {
   @Get('sw.js')
   serviceWorker(@Res() res: Response) {
     res.type('application/javascript').setHeader('Cache-Control', 'no-cache').send(SW);
+  }
+
+  @Get('logo.png')
+  logo(@Res() res: Response) {
+    const file = siteLogo();
+    if (!file) {
+      res.status(404).type('text/plain').send('Not found');
+      return;
+    }
+    res.type('image/png').setHeader('Cache-Control', 'public, max-age=86400').send(file);
   }
 
   @Get('icon-192.png')
