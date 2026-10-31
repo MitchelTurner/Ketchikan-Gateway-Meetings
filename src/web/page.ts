@@ -424,7 +424,7 @@ const GA_TAG = `<!-- Google tag (gtag.js) -->
 </script>`;
 
 /** Full document: the page name, its main element, the footer, and the bottom icon bar. */
-const APP_HEAD = `<link rel="icon" href="/logo.png" type="image/png"><link rel="manifest" href="/manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Recaps"><link rel="apple-touch-icon" href="/logo.png">`;
+const APP_HEAD = `<link rel="icon" href="/logo.png" type="image/png"><link rel="manifest" href="/manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Votes"><link rel="apple-touch-icon" href="/logo.png">`;
 
 /** The meetings a phone can opt into. "Other" is a leftover bucket, not a choice. */
 function notifyChoices(): string {

@@ -44,8 +44,8 @@ self.addEventListener('notificationclick', function(event) {
 `;
 
 const MANIFEST = {
-  name: 'Ketchikan meeting recaps',
-  short_name: 'Recaps',
+  name: 'Votes',
+  short_name: 'Votes',
   description: 'Plain-language recaps of Ketchikan public meetings, with a buzz when a new one is published.',
   start_url: '/',
   scope: '/',
