@@ -12,7 +12,22 @@ function opt(key: string, fallback: string): string {
 
 export const config = {
   get port() { return Number(opt('PORT', '3000')); },
-  get publicBaseUrl() { return req('PUBLIC_BASE_URL').replace(/\/$/, ''); },
+  /**
+   * Public origin, always https except on localhost. A Railway value of
+   * http://ketchikan.vote would otherwise put http links in emails and the
+   * canonical tag, and the browser would show the site as not secure.
+   */
+  get publicBaseUrl() {
+    const raw = req('PUBLIC_BASE_URL').replace(/\/$/, '');
+    try {
+      const u = new URL(raw);
+      const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '::1';
+      if (u.protocol === 'http:' && !local) return raw.replace(/^http:/, 'https:');
+    } catch {
+      /* keep the raw value; callers already require a usable URL */
+    }
+    return raw;
+  },
 
   // Source
   get archiveUrl() { return opt('ARCHIVE_URL', 'https://www.kgbak.us/434/Meeting-Video-Archive'); },

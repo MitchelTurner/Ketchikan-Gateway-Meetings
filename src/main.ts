@@ -2,13 +2,28 @@ import 'dotenv/config';
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { config } from './config';
+import { forceHttps } from './web/https';
 import { HtmlExceptionFilter } from './web/http-exception.filter';
 import { StatsService } from './web/stats.service';
 
+function publicHttpsBase(): string | null {
+  try {
+    const base = config.publicBaseUrl;
+    return base.startsWith('https://') ? base : null;
+  } catch {
+    return null;
+  }
+}
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Railway terminates TLS and forwards the original scheme. Without this,
+  // Express treats every request as http and a redirect can loop.
+  app.set('trust proxy', 1);
+  app.use(forceHttps(publicHttpsBase));
   app.useGlobalFilters(new HtmlExceptionFilter());
   app.use(app.get(StatsService).middleware());
   app.enableShutdownHooks();
