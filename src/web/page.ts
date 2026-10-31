@@ -4,6 +4,7 @@ import { MeetingDigest } from '../analysis/analysis.service';
 import type { DeepDiveArticle } from '../topics/deep-dive.service';
 import { BOROUGH_POPULATION, FOUNDING_READERS } from '../referrals';
 import { BODIES, esc, formatDate, hms, isCityBody, meetingParts, shortDate, slugify } from '../util';
+import { readVote, reviewVotes, voteProse } from '../analysis/votes';
 import { topicSearchScript, topicTools } from './topic-search';
 
 export { slugify };
@@ -914,14 +915,20 @@ export function weekSentence(headline: string): string {
 }
 
 /** The vote a card should show: a count such as "Approved 7–0", or "Unanimous" when that is all the transcript gave. */
-export function cardVote(actions: { outcome?: string; vote?: string }[] | undefined): string {
+export function cardVote(actions: { item?: string; outcome?: string; vote?: string }[] | undefined): string {
   if (!actions?.length) return '';
   const rows = actions.filter((a) => {
     const vote = (a.vote ?? '').replace(/\s+/g, ' ').trim();
     return vote && !/unclear|not stated|unknown|n\/a|^none$/i.test(vote);
   });
   if (!rows.length) return '';
-  const pick = rows.find((a) => /\d/.test(a.vote ?? '')) ?? rows[0];
+  // A 5–0 next to several 7–0s is a missed name, not the meeting's vote. Prefer a tally that matches the others.
+  const { notes } = reviewVotes(rows);
+  const sound = rows.filter((a, i) => {
+    const read = readVote(a.vote ?? '', a.outcome ?? '');
+    return Boolean(read.total) && !read.partial && !read.direction && !notes[i];
+  });
+  const pick = sound.find((a) => /\d/.test(a.vote ?? '')) ?? rows.find((a) => /\d/.test(a.vote ?? '')) ?? rows[0];
   let vote = (pick.vote ?? '').replace(/\s*[-–—]\s*/g, '–').replace(/\s+/g, ' ').trim();
   const outcome = (pick.outcome ?? '').replace(/\s+/g, ' ').trim();
   const short = /^(approved|passed|adopted|failed|rejected|postponed|tabled)$/i.test(outcome)
@@ -1295,6 +1302,7 @@ export function noteDetailPage(
   const h2 = (s: string) => `<h2>${esc(s)}</h2>`;
   const list = (items: string[]) => (items.length ? `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>` : '');
   const actions = (d.actions ?? []).filter((a) => a && (a.item || a.outcome));
+  const voteNotes = reviewVotes(actions, voteProse(d)).notes;
   const discussion = (d.discussion ?? []).filter((x) => x && (x.topic || x.gist));
   const comments = (d.publicComment ?? []).filter((x) => x && (x.who || x.topic || x.gist));
   const upcoming = (d.upcoming ?? []).filter((x) => x && x.item);
@@ -1308,7 +1316,7 @@ export function noteDetailPage(
       .join(''),
     actions.length
       ? h2('What they decided') +
-        list(actions.map((a) => `<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''} ${ts(a.t)}`))
+        list(actions.map((a, i) => `<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''}${voteNotes[i] ? ` <span class="meta">— ${esc(voteNotes[i])}</span>` : ''} ${ts(a.t)}`))
       : '',
     discussion.length
       ? h2('Also discussed') + list(discussion.map((x) => `<strong>${esc(x.topic)}.</strong> ${esc(x.gist)} ${ts(x.t)}`))

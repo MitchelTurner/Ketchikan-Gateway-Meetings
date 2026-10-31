@@ -1,4 +1,5 @@
 import { MeetingDigest } from '../analysis/analysis.service';
+import { reviewVotes, voteProse } from '../analysis/votes';
 import { esc, formatDate, hms } from '../util';
 
 export interface RenderInput {
@@ -55,6 +56,7 @@ export function renderHtml(i: RenderInput): string {
   const list = (items: string[]) => `<ul style="padding-left:18px;margin:0">${items.join('')}</ul>`;
 
   const actions = rows(d.actions).filter((a) => a.item || a.outcome);
+  const voteNotes = reviewVotes(actions, voteProse(d)).notes;
   const discussion = rows(d.discussion).filter((x) => x.topic || x.gist);
   const comments = rows(d.publicComment).filter((x) => x.who || x.topic || x.gist);
   const upcoming = rows(d.upcoming).filter((x) => x.item);
@@ -69,7 +71,7 @@ export function renderHtml(i: RenderInput): string {
   if (actions.length)
     sections.push(
       h2('What they decided') +
-        list(actions.map((a) => li(`<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''} · ${ts(a.t)}`))),
+        list(actions.map((a, i) => li(`<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''}${voteNotes[i] ? ` — ${esc(voteNotes[i])}` : ''} · ${ts(a.t)}`))),
     );
   if (discussion.length)
     sections.push(h2('Also discussed') + list(discussion.map((x) => li(`<strong>${esc(x.topic)}:</strong> ${esc(x.gist)} · ${ts(x.t)}`))));
@@ -130,13 +132,14 @@ ${esc(i.mailingAddress)}
 export function renderText(i: RenderInput): string {
   const { meeting: m, digest: d } = i;
   const actions = rows(d.actions).filter((a) => a.item || a.outcome);
+  const voteNotes = reviewVotes(actions, voteProse(d)).notes;
   const discussion = rows(d.discussion).filter((x) => x.topic || x.gist);
   const comments = rows(d.publicComment).filter((x) => x.who || x.topic || x.gist);
   const upcoming = rows(d.upcoming).filter((x) => x.item);
   const background = rows(d.background).filter((x) => x.point);
   const out: string[] = [d.headline, `${m.title}${m.meetingDate ? ` — ${formatDate(m.meetingDate)}` : ''}`, `Video: ${m.sourceUrl}`, '', String(d.summary ?? ''), ''];
   const sec = (title: string, lines: string[]) => lines.length && out.push(title.toUpperCase(), ...lines.map((r) => `- ${r}`), '');
-  sec('What they decided', actions.map((a) => `${a.item} — ${a.outcome}${a.vote ? ` (${a.vote})` : ''} [${hms(a.t)}]`));
+  sec('What they decided', actions.map((a, i) => `${a.item} — ${a.outcome}${a.vote ? ` (${a.vote})` : ''}${voteNotes[i] ? ` — ${voteNotes[i]}` : ''} [${hms(a.t)}]`));
   sec('Also discussed', discussion.map((x) => `${x.topic}: ${x.gist} [${hms(x.t)}]`));
   sec('Public comment', comments.map((x) => `${x.who} on ${x.topic}: ${x.gist} [${hms(x.t)}]`));
   sec('Coming up', upcoming.map((x) => `${x.item}${x.when ? ` — ${x.when}` : ''}`));
