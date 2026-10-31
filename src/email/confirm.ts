@@ -53,7 +53,7 @@ export function confirmEmail(opts: { url: string; siteUrl: string; mailingAddres
 <tr><td class="px" style="padding:0 32px"><div style="height:1px;line-height:1px;font-size:1px;background:#e7e9ec">&nbsp;</div></td></tr>
 <tr><td class="px" style="padding:24px 32px 12px;font-size:14px;line-height:21px;color:#67717d">Button not working? Paste this link into your browser:<br><a href="${href}" style="color:#0f8f80;text-decoration:underline;word-break:break-all">${href}</a></td></tr>
 <tr><td class="px" style="padding:0 32px 36px;font-size:14px;line-height:21px;color:#67717d">Didn't sign up? Ignore this email and you won't be added.</td></tr>
-<tr><td class="px" style="padding:0 32px 36px;font-size:13px;line-height:20px;color:#67717d"><strong style="color:#0a0f14">Ketchikan.Vote</strong><br>An independent public service from Ketchikan, Alaska. Not affiliated with the Ketchikan Gateway Borough or City of Ketchikan. Recaps are AI-written and reviewed by a person, but can contain mistakes — the official recording is the record.<br><br><a href="${site}" style="color:#67717d;text-decoration:underline">${host}</a><br>${address}</td></tr>
+<tr><td class="px" style="padding:0 32px 36px;font-size:13px;line-height:20px;color:#67717d"><strong style="color:#0a0f14">Ketchikan.Vote</strong><br>An independent public service from Ketchikan, Alaska. Not affiliated with the Ketchikan Gateway Borough or City of Ketchikan. Recaps are written with AI and can contain mistakes — the official recording is the record.<br><br><a href="${site}" style="color:#67717d;text-decoration:underline">${host}</a><br>${address}</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;

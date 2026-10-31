@@ -98,15 +98,16 @@ export const config = {
   get mailingAddress() { return req('MAILING_ADDRESS'); }, // CAN-SPAM requires a postal address
   get adminEmail() { return req('ADMIN_EMAIL'); },
   get autoSend() { return opt('AUTO_SEND', 'false') === 'true'; },
-  /** Review and subscriber mail. Transcription does not need this. */
+  /**
+   * Subscriber mail. The admin address and signing secret are only for a
+   * review copy, which new posts no longer wait on.
+   */
   get emailReady() {
     return Boolean(
       process.env.RESEND_API_KEY &&
         process.env.EMAIL_FROM &&
-        process.env.ADMIN_EMAIL &&
         process.env.MAILING_ADDRESS &&
-        process.env.PUBLIC_BASE_URL &&
-        process.env.SIGNING_SECRET,
+        process.env.PUBLIC_BASE_URL,
     );
   },
 

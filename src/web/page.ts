@@ -362,7 +362,7 @@ window.addEventListener('hashchange',mark);
 
 function footer(): string {
   return `<footer class="site"><div class="wrap">
-<p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough or City of Ketchikan publication. Recaps are written with AI from the Borough's recordings and the City's YouTube videos, and reviewed before they're published.</p>
+<p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough or City of Ketchikan publication. Recaps are written with AI from the Borough's recordings and the City's YouTube videos, and can contain mistakes.</p>
 <nav aria-label="About this site">
 <a href="/#how">How we report</a>
 <a href="${esc(config.archiveUrl)}">Borough archive</a>
@@ -1188,7 +1188,7 @@ const METHOD = `<ol class="method">
 <li><b>Recorded</b>Every meeting the Borough posts to its video archive, and every meeting the City of Ketchikan posts on YouTube.</li>
 <li><b>Transcribed</b>Word for word, with each point linked to its moment in the video.</li>
 <li><b>Checked</b>Names and item numbers against the published roster and agenda, with context from local news.</li>
-<li><b>Reviewed</b>A person can mark a recap as reviewed. It goes on the site, and out by email and phone, as soon as it's written.</li>
+<li><b>Sent</b>It goes on the site, and out by email and phone, as soon as it's written.</li>
 </ol>
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
 

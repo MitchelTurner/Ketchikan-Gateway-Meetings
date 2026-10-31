@@ -192,7 +192,13 @@ export function adminPostsPage(rows: AdminPostRow[], filter: PostFilter, q: stri
     (f) => `<a href="${esc(href(f.key))}"${f.key === filter ? ' class="on" aria-current="page"' : ''}>${f.label}<b>${n(counts[f.key])}</b></a>`,
   ).join('')}</nav>`;
   const stateLabel = (r: AdminPostRow) =>
-    r.state === 'hidden' ? '<span class="state stopped">Hidden</span>' : r.state === 'published' ? pill(r.status === 'SENT' ? 'SENT' : 'PUBLISHED') : pill('AWAITING_APPROVAL');
+    r.state === 'hidden'
+      ? '<span class="state stopped">Hidden</span>'
+      : r.status === 'SENT' || r.status === 'SENDING'
+        ? pill(r.status)
+        : r.state === 'published'
+          ? pill('PUBLISHED')
+          : pill('AWAITING_APPROVAL');
   const table = rows.length
     ? `<table class="data"><thead><tr><th>Post</th><th class="hide-sm">Meeting</th><th>State</th><th class="num">Views</th></tr></thead><tbody>${rows
         .map(
@@ -242,17 +248,21 @@ export function adminPostPage(p: AdminPost): string {
   const base = `/admin/posts/${encodeURIComponent(p.id)}`;
   let publish = '';
   if (p.state === 'draft') {
+    const emailed = p.status === 'SENT' || p.status === 'SENDING';
     const emailNote = p.backfill
       ? 'This is an older meeting, so it is published without email.'
-      : p.emailReady
-        ? `Publishing and emailing sends it to ${plural(p.subscribers, 'subscriber')}.`
-        : 'Email isn\'t connected yet, so this posts it on the site only.';
-    publish = `<div class="panel"><h3>Publish</h3><p>${esc(emailNote)}</p><div class="actions">${
-      !p.backfill && p.emailReady
-        ? postButton(`${base}/approve`, 'Publish and email', { confirm: `Publish this recap and email it to ${p.subscribers} subscriber(s)?` }) +
+      : emailed
+        ? 'Subscribers were emailed this recap when it went on the site.'
+        : p.emailReady
+          ? `New recaps email themselves. This one can go to ${plural(p.subscribers, 'subscriber')} now.`
+          : "Email isn't connected yet, so this stays on the site only until Resend is configured.";
+    const actions = emailed
+      ? ''
+      : !p.backfill && p.emailReady
+        ? postButton(`${base}/approve`, 'Email subscribers', { confirm: `Email this recap to ${p.subscribers} subscriber(s)?` }) +
           postButton(`${base}/publish`, 'Site only', { cls: 'ghost' })
-        : postButton(`${base}/publish`, 'Publish on the site')
-    }</div></div>`;
+        : postButton(`${base}/publish`, 'Publish on the site');
+    publish = `<div class="panel"><h3>${emailed ? 'Email' : 'Publish'}</h3><p>${esc(emailNote)}</p>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`;
   }
   const visibility =
     p.state === 'hidden'
@@ -274,7 +284,7 @@ export function adminPostPage(p: AdminPost): string {
     'posts',
     `${p.flash ? `<div class="flash">${esc(p.flash)}</div>` : ''}<p class="meta"><a href="/admin/posts">← All posts</a></p>
 <div class="kicker">${esc(p.body)} · ${esc(p.date)}</div>
-<div class="status-grid">${p.state === 'hidden' ? '<span class="state stopped">Hidden</span>' : pill(p.state === 'published' ? (p.status === 'SENT' ? 'SENT' : 'PUBLISHED') : 'AWAITING_APPROVAL')}<span class="meta">${plural(p.views, 'view')}</span><span class="meta">Written ${esc(stamp(p.createdAt))}</span>${p.editedAt ? `<span class="meta">Edited ${esc(stamp(p.editedAt))}</span>` : ''}</div>
+<div class="status-grid">${p.state === 'hidden' ? '<span class="state stopped">Hidden</span>' : pill(p.status === 'SENT' || p.status === 'SENDING' ? p.status : p.state === 'published' ? 'PUBLISHED' : 'AWAITING_APPROVAL')}<span class="meta">${plural(p.views, 'view')}</span><span class="meta">Written ${esc(stamp(p.createdAt))}</span>${p.editedAt ? `<span class="meta">Edited ${esc(stamp(p.editedAt))}</span>` : ''}</div>
 ${p.error ? `<div class="flash bad">${esc(p.error)}</div>` : ''}
 <div class="editor">
 <form method="post" action="${esc(base)}">

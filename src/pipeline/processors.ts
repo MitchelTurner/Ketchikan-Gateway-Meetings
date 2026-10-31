@@ -53,7 +53,12 @@ export class EmailProcessor extends WorkerHost {
 @Injectable()
 export class DiscoveryScheduler implements OnApplicationBootstrap {
   private log = new Logger(DiscoveryScheduler.name);
-  constructor(@InjectQueue(Q_CONTROL) private controlQ: Queue, private discovery: DiscoveryService) {}
+  constructor(
+    @InjectQueue(Q_CONTROL) private controlQ: Queue,
+    private discovery: DiscoveryService,
+    private pipeline: PipelineService,
+    private dives: DeepDiveService,
+  ) {}
   async onApplicationBootstrap() {
     await this.controlQ.upsertJobScheduler(
       'discover-archive',
@@ -64,8 +69,10 @@ export class DiscoveryScheduler implements OnApplicationBootstrap {
     const refiled = await this.discovery.refilePlanning();
     const unfinished = (await this.discovery.requeueUnfinished()) + (await this.discovery.promoteSkipped());
     const outdated = await this.discovery.requeueOutdatedRecaps();
+    const unsent = await this.pipeline.releaseUnsent();
+    const dives = await this.dives.releaseDrafts();
     // Recaps written before topics existed (or while tagging failed) get tagged in the background.
     await this.controlQ.add('tag-topics', {}, { jobId: `tag-topics-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
-    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${refiled} meeting(s) filed as Planning Commission. ${unfinished} unfinished meeting(s) queued. ${outdated} draft recap(s) queued to add the roster and agenda check.`);
+    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${refiled} meeting(s) filed as Planning Commission. ${unfinished} unfinished meeting(s) queued. ${outdated} draft recap(s) queued to add the roster and agenda check. ${unsent} recap(s) and ${dives} deep dive(s) queued to subscribers.`);
   }
 }

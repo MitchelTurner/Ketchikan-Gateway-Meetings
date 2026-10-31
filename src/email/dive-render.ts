@@ -62,7 +62,7 @@ export function renderDiveHtml(i: DiveRenderInput): string {
           .map((x) => `<p style="margin:0 0 10px;font:16px/1.55 ${SERIF};color:${C.ink2}">${esc(x.point)} ${x.sources.map((u) => `<a href="${esc(u)}" style="color:${C.accent}">${esc(sourceLabel(u))}</a>`).join(' · ')}</p>`)
           .join(''),
     );
-  const notes = ['Written with AI from Borough meeting recordings and reviewed before sending. Use the ▶ links to hear each moment yourself.', ...a.caveats];
+  const notes = ['Written with AI from Borough meeting recordings. Use the ▶ links to hear each moment yourself.', ...a.caveats];
   const page = `${i.baseUrl}/topics/${encodeURIComponent(i.topic.slug)}`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(renderDiveSubject(i))}</title></head>
 <body style="margin:0;padding:0;background:${C.bg};color:${C.ink}">
@@ -93,7 +93,7 @@ export function renderDiveText(i: DiveRenderInput): string {
   sec('What residents said', a.residents.map((x) => `- ${x.who}: ${x.gist}`));
   sec("What's next", a.whatsNext.map((x) => `- ${x.item}${x.when ? ` — ${x.when}` : ''}`));
   sec('Background from local news', a.background.map((x) => `- ${x.point} ${x.sources.join(' ')}`));
-  out.push('Written with AI from Borough meeting recordings and reviewed before sending.', ...a.caveats, '');
+  out.push('Written with AI from Borough meeting recordings.', ...a.caveats, '');
   out.push(`Change your topics: ${i.preferencesUrl}`, `Unsubscribe: ${i.unsubscribeUrl}`, i.mailingAddress);
   return out.filter((l) => l !== undefined).join('\n');
 }

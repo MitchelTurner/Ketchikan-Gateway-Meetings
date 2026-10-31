@@ -46,7 +46,7 @@ export class PipelineService {
     @InjectQueue(Q_EMAIL) private emailQ: Queue,
   ) {}
 
-  /** research → download → transcribe → analyze → (approval email | deliver). Each stage is skipped if already done. */
+  /** research → download → transcribe → analyze → email subscribers. Each stage is skipped if already done. */
   async processMeeting(meetingId: string, opts: { refreshRecap?: boolean } = {}) {
     let meeting = await this.prisma.meeting.findUniqueOrThrow({
       where: { id: meetingId },
@@ -57,7 +57,6 @@ export class PipelineService {
     try {
       // A refresh rewrites an unsent draft with the current sources; a sent recap stays as mailed.
       const redo = !!opts.refreshRecap && !!meeting.analysis && !meeting.analysis.approvedAt && !meeting.analysis.editedAt;
-      let wroteAnalysis = false;
       let fresh: MeetingDigest | null = null;
       let context = meeting.research ? normalizeContext(meeting.research.data) : null;
       if (!context && (!meeting.analysis || redo) && config.researchEnabled) context = await this.runResearch(meeting);
@@ -109,7 +108,6 @@ export class PipelineService {
         await this.setStatus(meetingId, 'ANALYZING');
         fresh = await this.analysis.analyze(meeting, segments, context);
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: fresh as any } });
-        wroteAnalysis = true;
       } else if (redo) {
         await this.setStatus(meetingId, 'ANALYZING');
         try {
@@ -146,15 +144,13 @@ export class PipelineService {
 
       await this.setStatus(meetingId, 'AWAITING_APPROVAL');
       if (isBackfill(meeting)) {
-        // Hundreds of old meetings must not each send a review email.
+        // Hundreds of old meetings must not each email subscribers.
         if (config.autoSend) await this.approve(meetingId);
         else await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: BACKFILL_NOTE } });
       } else if (config.autoSend) {
         await this.approve(meetingId);
       } else {
-        await this.sendReviewEmail(meetingId, wroteAnalysis);
-        // Only a recap written on this pass. A deploy that rewrites an older draft must not email the backlog.
-        if (wroteAnalysis) await this.releaseToReaders(meetingId);
+        await this.releaseToReaders(meetingId);
       }
     } catch (err) {
       await this.prisma.meeting.update({
@@ -321,19 +317,50 @@ export class PipelineService {
   }
 
   /**
-   * The recap is on the site. Tell subscribers and phones now, without waiting
-   * for a person to review it. Backfill stays quiet, and a second pass does
-   * nothing once phones were already buzzed.
+   * The recap is on the site. Email subscribers and buzz phones now, without
+   * waiting for a person to review it. A phone buzz does not count as the
+   * email. Backfill stays quiet, and a second pass does not send again.
    */
   private async releaseToReaders(meetingId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
-    if (!meeting?.analysis || meeting.analysis.hiddenAt || meeting.analysis.notifiedAt) return;
+    if (!meeting?.analysis || meeting.analysis.hiddenAt) return;
     if (isBackfill(meeting)) return;
-    if (config.emailReady) {
+    if (emptyRecording(normalizeDigest(meeting.analysis.data))) return;
+    const mailed = meeting.status === 'SENT' || meeting.status === 'SENDING';
+    if (!mailed && config.emailReady) {
       await this.enqueueDeliver(meetingId);
       return;
     }
-    void this.push.notifyRecap(meetingId);
+    if (!meeting.analysis.notifiedAt) void this.push.notifyRecap(meetingId);
+  }
+
+  /**
+   * Recaps already on the site that were never emailed. A rewrite still in
+   * progress is left alone; that pass sends when it finishes. Older meetings
+   * stay on the site and are not emailed.
+   */
+  async releaseUnsent(): Promise<number> {
+    if (!config.emailReady) {
+      this.log.warn('Subscriber email is not connected yet (Resend, from address, mailing address, and the public site URL).');
+      return 0;
+    }
+    const rows = await this.prisma.meeting.findMany({
+      where: { status: 'AWAITING_APPROVAL', analysis: { is: { hiddenAt: null } } },
+      select: { id: true, meetingDate: true, analysis: { select: { data: true, editedAt: true } } },
+    });
+    let n = 0;
+    for (const m of rows) {
+      if (isBackfill(m)) continue;
+      const data = m.analysis?.data;
+      const checked = !!data && typeof data === 'object' && !Array.isArray(data) && 'checkedAgainst' in data;
+      // The startup rewrite sends this one when the new draft is saved.
+      if (!checked && !m.analysis?.editedAt) continue;
+      if (emptyRecording(normalizeDigest(data))) continue;
+      await this.releaseToReaders(m.id);
+      n++;
+    }
+    if (n) this.log.log(`Queued subscriber email for ${n} recap${n === 1 ? '' : 's'} already on the site`);
+    return n;
   }
 
   /** Approves a recap for the website without emailing anyone, whatever its date. */

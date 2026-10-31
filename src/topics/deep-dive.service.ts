@@ -75,7 +75,7 @@ export class DeepDiveService {
     @InjectQueue(Q_EMAIL) private emailQ: Queue,
   ) {}
 
-  /** Drafts the deep dive for a milestone, then sends it for review (or straight out with AUTO_SEND). */
+  /** Drafts the deep dive for a milestone, then emails the people following that topic. */
   async write(topicId: string, triggerMeetingId: string): Promise<string | null> {
     const existing = await this.prisma.deepDive.findUnique({ where: { topicId_triggerMeetingId: { topicId, triggerMeetingId } } });
     if (existing) return existing.id;
@@ -145,9 +145,25 @@ export class DeepDiveService {
       data: { topicId, triggerMeetingId, model: config.anthropicModel, data: article as any },
     });
     this.log.log(`Deep dive drafted: ${topic.name} — ${article.headline}`);
-    if (config.autoSend && config.emailReady) await this.approve(dive.id);
-    else if (config.emailReady) await this.sendReview(dive.id).catch((err) => this.log.error(`Deep dive review email failed: ${err.message}`));
+    if (config.emailReady) await this.approve(dive.id).catch((err) => this.log.error(`Deep dive email failed: ${(err as Error).message}`));
     return dive.id;
+  }
+
+  /** Drafts that were waiting for a review click. Followers get them without that step. */
+  async releaseDrafts(): Promise<number> {
+    if (!config.emailReady) return 0;
+    const rows = await this.prisma.deepDive.findMany({ where: { status: 'DRAFT' }, select: { id: true } });
+    let n = 0;
+    for (const d of rows) {
+      try {
+        await this.approve(d.id);
+        n++;
+      } catch (err) {
+        this.log.error(`Deep dive email failed: ${(err as Error).message}`);
+      }
+    }
+    if (n) this.log.log(`Queued ${n} deep dive${n === 1 ? '' : 's'} that had been waiting for review`);
+    return n;
   }
 
   approvePath(diveId: string) {

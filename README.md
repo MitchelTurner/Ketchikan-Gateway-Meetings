@@ -29,18 +29,18 @@ NestJS 11 · BullMQ on Redis · Prisma/Postgres · yt-dlp + ffmpeg · AssemblyAI
 |---|---|
 | `SKIPPED` | Dated before `PROCESS_SINCE` (or no date found). Force with `POST /admin/meetings/:id/process`. |
 | `RESEARCHING` → `DOWNLOADING` → `TRANSCRIBING` → `ANALYZING` | Working. Finished stages are saved and reused on retry. |
-| `AWAITING_APPROVAL` | Transcript and recap are saved and already on the site. Phones buzz as soon as it is written. Subscribers are emailed then too, once Resend is configured. A review email goes to `ADMIN_EMAIL`; marking it reviewed does not send again. |
+| `AWAITING_APPROVAL` | Transcript and recap are saved and already on the site. Subscribers are emailed and phones buzz as soon as it is written, once Resend is configured. Nobody has to review it first. |
 | `SENT` | Queued to subscribers. Per-subscriber results are in `EmailSend`. |
 | `PUBLISHED` | Older than `EMAIL_SINCE`: approved and on `/notes`, not emailed. |
 | `FAILED` | See `error`; retried automatically 3×, or re-run with the process endpoint. |
 
-Set `AUTO_SEND=true` to mark each new recap reviewed as soon as it is written. Subscribers are emailed either way, once Resend is configured. Meetings older than `EMAIL_SINCE` are never emailed.
+Set `AUTO_SEND=true` to also mark each new recap reviewed as soon as it is written. Subscribers are emailed either way, once Resend is configured. Meetings older than `EMAIL_SINCE` are never emailed.
 
 ## Backfilling older meetings
 Set `PROCESS_SINCE` back, e.g. `PROCESS_SINCE=2023-11-01` for three years, and redeploy. On start (and every discovery run), meetings that were saved as `SKIPPED` and now fall inside the window are queued.
 
 - **Newest first.** Jobs are prioritized by meeting date, so a meeting from this week always jumps ahead of the backlog.
-- **No email for old meetings.** Anything dated before `EMAIL_SINCE` (default: 14 days ago) gets no review email and is never sent to subscribers. With `AUTO_SEND=true` it is published straight to `/notes` (status `PUBLISHED`). Otherwise it waits in `AWAITING_APPROVAL`: approve one from `/admin/meetings` or publish them all with `POST /admin/publish-backfill`. Drafts are readable on `/meetings/:id` before then.
+- **No email for old meetings.** Anything dated before `EMAIL_SINCE` (default: 14 days ago) is never sent to subscribers. With `AUTO_SEND=true` it is published straight to `/notes` (status `PUBLISHED`). Otherwise it waits in `AWAITING_APPROVAL`: approve one from `/admin/meetings` or publish them all with `POST /admin/publish-backfill`. Drafts are readable on `/meetings/:id` before then.
 - **Research uses the roster as of the meeting date**, not today's, so names from a 2023 Assembly are checked against the 2023 members.
 - **Throughput:** one meeting at a time, about 30–45 minutes each, so a few hundred meetings take roughly a week. Watch progress with `GET /admin/stats`.
 - **Cost:** about $1–2 per meeting (transcription + research + recap). 200 meetings ≈ $200–400. Narrow it by moving `PROCESS_SINCE` forward; meetings already done are kept.
@@ -52,7 +52,7 @@ Some issues run for months: a budget, a harbor project, a zoning case. Topics fo
 1. **Claude suggests topics.** After each recap, Claude tags the meeting with the topics it touched and suggests new ones. On start, recaps that haven't been tagged yet (including the backfill) are tagged too, so suggestions reflect the whole year.
 2. **You approve them** at `/admin/topics` (open `/admin/topics?token=$ADMIN_TOKEN` once to sign in). Suggestions are ranked by how many meetings raised them. "Not a topic" archives one so it's never suggested again.
 3. **Topics are public as soon as they're suggested.** `/topics` lists the issues that came up at more than one meeting. An issue mentioned only once stays off that list until you search: the box matches the name, the description, and what was said, including a plural or a name written as one word. `/topics/:slug` stays up either way, with a timeline of the meetings that raised it. Approving one adds it to the signup form. The topic page has a "Follow" form that signs up for topic emails only; a reader can follow a suggestion before you approve it.
-4. **Key moments trigger a deep dive.** When a meeting is a milestone for an approved topic (a final vote, a budget adopted, a contract awarded, a hearing held, a major new proposal), Claude drafts an explainer from every meeting on that topic plus local news coverage: what just happened, why it matters, how we got here, what residents said, what's next. It's emailed to you for review like a recap, then sent only to subscribers following that topic, and becomes the story on the topic page. `AUTO_SEND=true` skips the review. Backfilled meetings never trigger one; use "Write a deep dive now" on `/admin/topics` for a first explainer.
+4. **Key moments trigger a deep dive.** When a meeting is a milestone for an approved topic (a final vote, a budget adopted, a contract awarded, a hearing held, a major new proposal), Claude drafts an explainer from every meeting on that topic plus local news coverage: what just happened, why it matters, how we got here, what residents said, what's next. It is emailed to subscribers following that topic and becomes the story on the topic page, without a review click. Backfilled meetings never trigger one; use "Write a deep dive now" on `/admin/topics` for a first explainer.
 
 Subscribers who follow a topic from its page get topic emails only (`recaps = false`); they can add meeting recaps from the preferences link. Cost: tagging ≈ $0.01–0.03 per meeting, a deep dive ≈ $0.10–0.40.
 
@@ -104,7 +104,7 @@ Page views are also counted on the server: the IP address and browser are hashed
 - `POST /admin/publish-backfill` — publish every drafted recap older than `EMAIL_SINCE` on `/notes` (no email)
 - `GET /admin/stats`
 
-Resend can stay unset while you check a transcript. The meeting lands on `AWAITING_APPROVAL`, phones can still buzz, and subscriber email waits. Add `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL`, and `MAILING_ADDRESS`, then approve that meeting to send the subscriber email once. Re-running process sends you the review note; it does not email recaps that were already written.
+Resend can stay unset while you check a transcript. The meeting lands on `AWAITING_APPROVAL`, phones can still buzz, and subscriber email waits. Add `RESEND_API_KEY`, `EMAIL_FROM`, `MAILING_ADDRESS`, and `PUBLIC_BASE_URL`. The next start emails every current recap already on the site that subscribers have not received. A new recap emails itself when it is written. Older meetings are not emailed.
 
 ## Public pages
 `/` front page: signup, latest recaps (with the vote, when one was recorded), what the latest meetings said is coming up, and the docket of meetings being transcribed (filterable by body) · `/topics` and `/topics/:slug` issues followed across meetings (the index shows issues that came up more than once; search finds a single mention; archived stays hidden) · `/meetings/:id` one meeting's transcript and recap · `/notes` newest written recaps, with search · `/notes/:id` one recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. A recap shows on `/notes` as soon as it's written, and subscribers and phones are told then. The "reviewed by a person" line still waits for approval. Hidden recaps stay off every public page. Borough meetings and City of Ketchikan meetings (from the city's YouTube channel) are both included. A YouTube title with no day is dated from the opening of the transcript when that spoken date is within a week of the upload.
