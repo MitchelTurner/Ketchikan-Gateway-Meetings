@@ -408,7 +408,7 @@ export class PublicController {
       try {
         const url = `${config.publicBaseUrl}/confirm/${sub.token}`;
         const message = confirmEmail({ url, siteUrl: config.publicBaseUrl, mailingAddress: config.mailingAddress });
-        await this.email.send({ to: email, subject: message.subject, html: message.html, text: message.text });
+        await this.email.send({ to: email, subject: message.subject, html: message.html });
       } catch (err) {
         this.log.error(`Confirmation email failed: ${(err as Error).message}`);
         res.status(502);

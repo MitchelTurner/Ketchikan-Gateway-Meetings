@@ -6,7 +6,8 @@ export interface OutgoingEmail {
   to: string;
   subject: string;
   html: string;
-  text: string;
+  /** Plain-text alternative. Leave it off to send the HTML message alone. */
+  text?: string;
   unsubscribeUrl?: string;
 }
 
@@ -29,7 +30,7 @@ export class EmailService {
       to: e.to,
       subject: e.subject,
       html: e.html,
-      text: e.text,
+      ...(e.text ? { text: e.text } : {}),
       headers,
     });
     if (error) throw new Error(`Resend: ${error.name}: ${error.message}`);

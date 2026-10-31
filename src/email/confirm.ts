@@ -25,7 +25,7 @@ function siteHost(siteUrl: string): string {
  * The first email a new subscriber gets. `url` is their own confirm link.
  * The postal address stays in the footer because commercial email has to carry one.
  */
-export function confirmEmail(opts: { url: string; siteUrl: string; mailingAddress: string }): { subject: string; html: string; text: string } {
+export function confirmEmail(opts: { url: string; siteUrl: string; mailingAddress: string }): { subject: string; html: string } {
   const href = esc(opts.url);
   const site = esc(opts.siteUrl);
   const host = esc(siteHost(opts.siteUrl));
@@ -57,28 +57,5 @@ export function confirmEmail(opts: { url: string; siteUrl: string; mailingAddres
 </table>
 </td></tr></table>
 </body></html>`;
-  const text = [
-    'Stay up to date on Ketchikan',
-    '',
-    'Confirm your subscription.',
-    '',
-    "You're one click away from a plain-language recap after each meeting you picked — what passed, what was debated, what residents said, and what comes next.",
-    '',
-    `Confirm: ${opts.url}`,
-    '',
-    `This link expires in ${hours} hours.`,
-    '',
-    'What to expect',
-    'One email after each meeting, usually the next day. Each recap is written from the official recording, checked against the agenda, and linked to the exact moment in the video.',
-    '',
-    'Assembly, Planning Commission, School Board',
-    '',
-    "Didn't sign up? Ignore this email and you won't be added.",
-    '',
-    'Ketchikan.Vote',
-    'An independent public service from Ketchikan, Alaska. Not affiliated with the Ketchikan Gateway Borough or City of Ketchikan. Recaps are AI-written and reviewed by a person, but can contain mistakes — the official recording is the record.',
-    opts.siteUrl,
-    opts.mailingAddress,
-  ].join('\n');
-  return { subject, html, text };
+  return { subject, html };
 }
