@@ -1201,7 +1201,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
       ? { href: `/meetings/${draft.id}`, body: draft.body, date: draft.date, headline: draft.headline, dek: esc(describe(draft.summary, 260)), draft: true }
       : null;
   const more = recent.slice(1, 5);
-  const title = `${config.newsletterName}: Ketchikan Assembly, School Board, Planning and City Council meetings in plain language`;
+  const title = 'Independent recaps of Ketchikan Assembly, School Board, Planning and City Council meetings';
   const description =
     'What Ketchikan\'s Assembly, School Board, Planning Commission and City Council decided, debated and heard, written in plain language and linked to the video.';
 
@@ -1231,7 +1231,7 @@ ${membersLine(lead.body)}
     `<div class="hero-band"><div class="wrap">
 <section class="hero">
   <div>
-    <p class="kicker">Ketchikan Gateway Borough</p>
+    <p class="kicker">Not affiliated with the Ketchikan Gateway Borough or the City of Ketchikan</p>
     <h1>Every public meeting, in plain language.</h1>
     <p class="dek">What passed, what was debated, what residents said, and what comes next. Written from the official recording, checked against the agenda, and linked to the exact moment in the video.</p>
     ${weekSection(week)}
@@ -1285,7 +1285,7 @@ ${comingSection(coming)}
         jsonLd: {
           '@context': 'https://schema.org',
           '@type': 'WebSite',
-          name: config.newsletterName,
+          name: 'Independent recaps of Ketchikan public meetings',
           description,
           ...(baseUrl() ? { url: `${baseUrl()}/` } : {}),
           about: { '@type': 'AdministrativeArea', name: 'Ketchikan Gateway Borough, Alaska' },
