@@ -61,10 +61,11 @@ export class DiscoveryScheduler implements OnApplicationBootstrap {
       { name: 'discover', opts: { removeOnComplete: 50, removeOnFail: 50 } },
     );
     await this.controlQ.add('discover', {}, { jobId: `discover-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
+    const refiled = await this.discovery.refilePlanning();
     const unfinished = (await this.discovery.requeueUnfinished()) + (await this.discovery.promoteSkipped());
     const outdated = await this.discovery.requeueOutdatedRecaps();
     // Recaps written before topics existed (or while tagging failed) get tagged in the background.
     await this.controlQ.add('tag-topics', {}, { jobId: `tag-topics-boot-${Date.now()}`, removeOnComplete: 20, removeOnFail: 20 });
-    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${unfinished} unfinished meeting(s) queued. ${outdated} draft recap(s) queued to add the roster and agenda check.`);
+    this.log.log(`Archive check scheduled: "${config.discoveryCron}" (${config.timezone}). Startup discover queued. ${refiled} meeting(s) filed as Planning Commission. ${unfinished} unfinished meeting(s) queued. ${outdated} draft recap(s) queued to add the roster and agenda check.`);
   }
 }

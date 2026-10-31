@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { normalizeDigest } from '../analysis/analysis.service';
+import { emptyRecording } from '../analysis/empty-recording';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
 import { BODIES, slugify } from '../util';
@@ -56,7 +57,8 @@ export class PushService {
     try {
       const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
       if (!meeting?.analysis || meeting.analysis.hiddenAt || meeting.analysis.notifiedAt) return;
-      if (!normalizeDigest(meeting.analysis.data)) return;
+      const digest = normalizeDigest(meeting.analysis.data);
+      if (!digest || emptyRecording(digest)) return;
       let base = '';
       try {
         base = config.publicBaseUrl;

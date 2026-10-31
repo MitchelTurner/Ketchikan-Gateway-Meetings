@@ -1243,9 +1243,11 @@ export function meetingPage(
   digest: MeetingDigest | null,
   approved: boolean,
   segments: { start?: number; speaker?: string; text?: string }[],
+  /** Shown when the file is not a meeting, so the page does not pretend there is a recap. */
+  gap = '',
 ): string {
   const note = publicStatusNote(meeting.status);
-  const label = publicPill(meeting.status);
+  const label = gap ? '' : publicPill(meeting.status);
   const banner = label || note ? `<div class="status-line">${label}${note ? `<p class="muted">${esc(note)}</p>` : ''}</div>` : '';
   const transcript = transcriptHtml(segments);
   // A reviewed recap has its own canonical page; drafts stay out of search.
@@ -1259,7 +1261,8 @@ ${banner}<div class="kicker">${esc(meeting.body)}</div>
 ${membersLine(meeting.body)}
 ${partsList(meeting.title, meeting.body)}
 <div class="byline"><span>${esc(date || 'Date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a></div>
-${transcript || '<p class="empty">No transcript yet.</p>'}
+${gap ? `<p>${esc(gap)}</p>` : ''}
+${transcript || (gap ? '' : '<p class="empty">No transcript yet.</p>')}
 </article></main>`,
     { seo: { noindex: true } },
   );

@@ -28,7 +28,7 @@ export function verify(value: string, sig: string | undefined): boolean {
  */
 export const BODIES: { name: string; pattern: RegExp }[] = [
   { name: 'Assembly', pattern: /assembly/i },
-  { name: 'Planning Commission', pattern: /planning\s*(commission|&\s*zoning|and\s*zoning)|\bP\s*&\s*Z\b/i },
+  { name: 'Planning Commission', pattern: /planning\s*(commission|&\s*zoning|and\s*zoning)|\bP\s*&\s*Z\b|\bP\.?\s*C\.?\s+meeting\b/i },
   { name: 'School Board', pattern: /school\s*board/i },
   { name: 'Service Area Boards', pattern: /service\s*area/i },
   { name: 'City Council', pattern: /city\s*council/i },

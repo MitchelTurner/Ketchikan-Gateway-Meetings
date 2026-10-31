@@ -5,7 +5,8 @@ import { Queue } from 'bullmq';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { AnalysisService, normalizeDigest } from '../analysis/analysis.service';
+import { AnalysisService, MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
+import { emptyRecording } from '../analysis/empty-recording';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { renderHtml, renderSubject, renderText, RenderInput } from '../email/render';
@@ -57,6 +58,7 @@ export class PipelineService {
       // A refresh rewrites an unsent draft with the current sources; a sent recap stays as mailed.
       const redo = !!opts.refreshRecap && !!meeting.analysis && !meeting.analysis.approvedAt && !meeting.analysis.editedAt;
       let wroteAnalysis = false;
+      let fresh: MeetingDigest | null = null;
       let context = meeting.research ? normalizeContext(meeting.research.data) : null;
       if (!context && (!meeting.analysis || redo) && config.researchEnabled) context = await this.runResearch(meeting);
       if (!meeting.transcript || !meeting.analysis || redo) {
@@ -105,14 +107,14 @@ export class PipelineService {
 
       if (!meeting.analysis) {
         await this.setStatus(meetingId, 'ANALYZING');
-        const digest = await this.analysis.analyze(meeting, segments, context);
-        await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
+        fresh = await this.analysis.analyze(meeting, segments, context);
+        await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: fresh as any } });
         wroteAnalysis = true;
       } else if (redo) {
         await this.setStatus(meetingId, 'ANALYZING');
         try {
-          const digest = await this.analysis.analyze(meeting, segments, context);
-          await this.prisma.analysis.update({ where: { meetingId }, data: { model: this.analysis.model, data: digest as any } });
+          fresh = await this.analysis.analyze(meeting, segments, context);
+          await this.prisma.analysis.update({ where: { meetingId }, data: { model: this.analysis.model, data: fresh as any } });
         } catch (err) {
           // The earlier draft stays up; the next deploy tries again.
           this.log.warn(`${meetingId}: recap refresh failed, keeping the earlier draft: ${(err as Error).message}`);
@@ -122,6 +124,17 @@ export class PipelineService {
           });
           return;
         }
+      }
+
+      const recap = fresh ?? (meeting.analysis ? normalizeDigest(meeting.analysis.data) : null);
+      if (recap && emptyRecording(recap)) {
+        // The file is a microphone check. Keep it off the site and out of subscriber mail.
+        await this.prisma.meeting.update({
+          where: { id: meetingId },
+          data: { status: 'PUBLISHED', error: 'Recording is only a microphone check, so no recap was published.' },
+        });
+        this.log.log(`${meetingId}: recording is only a microphone check; recap stays off the site`);
+        return;
       }
 
       // Topics are extra: a failure is logged and retried by the next tag-topics run.

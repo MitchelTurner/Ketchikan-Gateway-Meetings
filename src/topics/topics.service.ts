@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { normalizeDigest } from '../analysis/analysis.service';
+import { emptyRecording } from '../analysis/empty-recording';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL } from '../queues';
@@ -63,7 +64,11 @@ export class TopicsService {
   async tagMeeting(meetingId: string, opts: { allowDeepDive: boolean }): Promise<void> {
     const meeting = await this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId }, include: { analysis: true } });
     const digest = normalizeDigest(meeting.analysis?.data);
-    if (!digest) return;
+    if (!digest || emptyRecording(digest)) {
+      // A microphone check is not an issue. Mark it tagged so the next boot does not ask again.
+      if (digest && !meeting.topicsAt) await this.prisma.meeting.update({ where: { id: meetingId }, data: { topicsAt: new Date() } });
+      return;
+    }
     const topics = await this.prisma.topic.findMany({ orderBy: { name: 'asc' } });
     const followed = topics.filter((t) => t.status !== 'ARCHIVED');
     const archived = topics.filter((t) => t.status === 'ARCHIVED');

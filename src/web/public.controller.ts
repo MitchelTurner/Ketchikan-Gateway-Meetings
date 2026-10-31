@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Header, HttpCode, Logger, Param, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
+import { emptyRecording } from '../analysis/empty-recording';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
@@ -17,6 +18,14 @@ import {
 import { readCookie } from './stats.service';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
+
+/** A recap readers should see. A microphone-check file is not one. */
+function publicDigest(data: unknown): MeetingDigest | null {
+  const d = normalizeDigest(data);
+  return d && !emptyRecording(d) ? d : null;
+}
+
+const MIC_CHECK = 'This recording is only a microphone check, so there is no recap.';
 const normBodies = (v: unknown): string[] =>
   (Array.isArray(v) ? v : v ? [v] : []).map(String).filter((b) => VALID_BODIES.has(b));
 
@@ -53,7 +62,7 @@ export class PublicController {
       `<url><loc>${esc(base)}/topics</loc><changefreq>weekly</changefreq></url>`,
       ...topics.map((t) => `<url><loc>${esc(base)}/topics/${esc(t.slug)}</loc><lastmod>${t.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`),
       ...notes.flatMap((n) => {
-        const d = normalizeDigest(n.analysis?.data);
+        const d = publicDigest(n.analysis?.data);
         return d ? [`<url><loc>${esc(base + noteHref(n.id, d.headline))}</loc><lastmod>${n.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`] : [];
       }),
     ];
@@ -91,7 +100,7 @@ export class PublicController {
       take: 15,
     });
     const rows = meetings.flatMap((m) => {
-      const digest = m.meetingDate ? normalizeDigest(m.analysis?.data) : null;
+      const digest = m.meetingDate ? publicDigest(m.analysis?.data) : null;
       const sentence = digest ? weekSentence(digest.headline) : '';
       return digest && m.meetingDate && sentence ? [{ at: m.meetingDate, href: noteHref(m.id, digest.headline), sentence }] : [];
     });
@@ -115,7 +124,7 @@ export class PublicController {
     const items: ComingItem[] = [];
     const seen = new Set<string>();
     for (const m of meetings) {
-      const digest = normalizeDigest(m.analysis?.data);
+      const digest = publicDigest(m.analysis?.data);
       if (!digest) continue;
       for (const upcoming of digest.upcoming) {
         const key = upcoming.item.replace(/\s+/g, ' ').trim().toLowerCase();
@@ -180,10 +189,10 @@ export class PublicController {
     const query = String(q ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
     const topics = await this.prisma.topic.findMany({
       where: { status: { not: 'ARCHIVED' }, meetings: { some: {} } },
-      include: { meetings: { include: { meeting: { select: { meetingDate: true, analysis: { select: { hiddenAt: true } } } } } } },
+      include: { meetings: { include: { meeting: { select: { meetingDate: true, analysis: { select: { hiddenAt: true, data: true } } } } } } },
     });
     const rows = topics.flatMap((t) => {
-      const visible = t.meetings.filter((l) => !l.meeting.analysis?.hiddenAt);
+      const visible = t.meetings.filter((l) => !l.meeting.analysis?.hiddenAt && !emptyRecording(normalizeDigest(l.meeting.analysis?.data)));
       if (!visible.length) return [];
       const latest = [...visible].sort((a, b) => (b.meeting.meetingDate?.getTime() ?? 0) - (a.meeting.meetingDate?.getTime() ?? 0))[0];
       return [{
@@ -213,10 +222,10 @@ export class PublicController {
     }
     const byId = new Map(topic.meetings.map((l) => [l.meetingId, l.meeting]));
     const rows = topic.meetings
-      .filter((l) => !l.meeting.analysis?.hiddenAt)
+      .filter((l) => !l.meeting.analysis?.hiddenAt && !emptyRecording(normalizeDigest(l.meeting.analysis?.data)))
       .sort((a, b) => (a.meeting.meetingDate?.getTime() ?? 0) - (b.meeting.meetingDate?.getTime() ?? 0))
       .map((l) => {
-        const digest = l.meeting.analysis && !l.meeting.analysis.hiddenAt ? normalizeDigest(l.meeting.analysis.data) : null;
+        const digest = publicDigest(l.meeting.analysis?.data);
         return {
           meetingId: l.meetingId,
           body: l.meeting.body,
@@ -254,7 +263,7 @@ export class PublicController {
       take: 200,
     });
     const mapped = meetings.map((m) => {
-      const digest = normalizeDigest(m.analysis?.data);
+      const digest = publicDigest(m.analysis?.data);
       return {
         id: m.id,
         title: m.title,
@@ -284,7 +293,9 @@ export class PublicController {
     const segments = Array.isArray(m.transcript?.segments)
       ? (m.transcript.segments as { start?: number; speaker?: string; text?: string }[])
       : [];
-    return meetingPage(m, normalizeDigest(m.analysis?.data), Boolean(m.analysis?.approvedAt), segments);
+    const raw = normalizeDigest(m.analysis?.data);
+    const empty = !!raw && emptyRecording(raw);
+    return meetingPage(m, empty ? null : raw, Boolean(m.analysis?.approvedAt), segments, empty ? MIC_CHECK : '');
   }
 
   /** Written recaps that aren't hidden, newest meeting date first. A query searches within that order. */
@@ -300,7 +311,7 @@ export class PublicController {
     });
     const hits: NoteHit[] = [];
     for (const m of meetings) {
-      const digest = normalizeDigest(m.analysis?.data);
+      const digest = publicDigest(m.analysis?.data);
       if (!digest) continue;
       const plain = notePlain(m.title, m.body, digest);
       if (query && !plain.toLowerCase().includes(query.toLowerCase())) continue;
@@ -322,11 +333,12 @@ export class PublicController {
   @Header('Content-Type', 'text/html; charset=utf-8')
   async note(@Param('id') id: string, @Req() req: Request) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
-    const digest = m?.analysis && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
-    if (!m || !digest) {
+    const raw = m?.analysis && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
+    if (m && raw && emptyRecording(raw)) return meetingPage(m, null, false, [], MIC_CHECK);
+    if (!m || !raw) {
       return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here once they've been written. <a href="/notes">Back to search</a>.</p>`);
     }
-    return noteDetailPage(m, digest, { growth: await this.growth(req), draft: !m.analysis?.approvedAt });
+    return noteDetailPage(m, raw, { growth: await this.growth(req), draft: !m.analysis?.approvedAt });
   }
 
   /**

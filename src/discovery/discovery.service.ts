@@ -1,6 +1,8 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import { normalizeDigest } from '../analysis/analysis.service';
+import { emptyRecording } from '../analysis/empty-recording';
 import { config } from '../config';
 import { MediaService, VideoMeta } from '../media/media.service';
 import { PrismaService } from '../prisma.service';
@@ -234,6 +236,31 @@ export class DiscoveryService {
   }
 
   /**
+   * The borough archive labels the Planning Commission "PC Meeting". Rows stored
+   * before that abbreviation was recognized are moved onto the commission.
+   */
+  async refilePlanning(): Promise<number> {
+    const rows = await this.prisma.meeting.findMany({
+      where: {
+        NOT: { body: 'Planning Commission' },
+        OR: [
+          { title: { contains: 'PC', mode: 'insensitive' } },
+          { title: { contains: 'Planning', mode: 'insensitive' } },
+          { title: { contains: 'P&Z', mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, title: true, body: true },
+    });
+    let moved = 0;
+    for (const m of rows) {
+      if (detectBody(m.title, m.body) !== 'Planning Commission') continue;
+      await this.prisma.meeting.update({ where: { id: m.id }, data: { body: 'Planning Commission' } });
+      moved++;
+    }
+    return moved;
+  }
+
+  /**
    * SKIPPED meetings that PROCESS_SINCE now covers (it was moved back to
    * backfill) are queued. Their status changes, so this runs once per meeting.
    */
@@ -291,6 +318,7 @@ export class DiscoveryService {
     for (const m of rows) {
       const data = m.analysis?.data;
       if (data && typeof data === 'object' && !Array.isArray(data) && 'checkedAgainst' in data) continue;
+      if (emptyRecording(normalizeDigest(data))) continue;
       await this.enqueueProcess(m.id, m.meetingDate, { refreshRecap: true });
       n++;
     }
