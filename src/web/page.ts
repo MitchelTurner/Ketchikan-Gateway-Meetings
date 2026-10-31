@@ -1231,7 +1231,7 @@ ${membersLine(lead.body)}
     `<div class="hero-band"><div class="wrap">
 <section class="hero">
   <div>
-    <p class="kicker">Not affiliated with the Ketchikan Gateway Borough or the City of Ketchikan</p>
+    <p class="kicker">Stay up to date on Ketchikan</p>
     <h1>Every public meeting, in plain language.</h1>
     <p class="dek">What passed, what was debated, what residents said, and what comes next. Written from the official recording, checked against the agenda, and linked to the exact moment in the video.</p>
     ${weekSection(week)}
