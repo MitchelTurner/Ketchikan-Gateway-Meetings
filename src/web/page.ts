@@ -73,6 +73,20 @@ fieldset{border:0;padding:0;margin:20px 0 0}legend{font:500 13.5px/1.4 var(--san
 .chips label:has(input:checked){background:color-mix(in srgb,var(--teal) 16%,transparent);border-color:var(--teal);color:var(--text)}
 .chips label:has(input:checked)::before{content:"✓ ";color:var(--teal)}
 .chips label:has(input:focus-visible){outline:2px solid var(--teal);outline-offset:2px}
+.chips button{width:auto;margin:0;font:500 13.5px/1 var(--sans);color:var(--text-2);border:1px solid var(--line-2);border-radius:999px;padding:9px 14px;cursor:pointer;background:var(--surface)}
+.chips button:hover{border-color:var(--teal);color:var(--text)}
+.chips button[aria-pressed="true"]{background:color-mix(in srgb,var(--teal) 16%,transparent);border-color:var(--teal);color:var(--text)}
+.chips button:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+p.vote{display:inline-block;margin:0 0 8px;padding:2px 9px;border-radius:999px;font:600 12.5px/1.45 var(--mono);letter-spacing:.01em;color:var(--text);background:color-mix(in srgb,var(--teal) 18%,transparent)}
+.coming{border-top:1px solid var(--line);margin-top:28px;padding-top:36px}
+.coming ul{list-style:none;margin:14px 0 0;padding:0}
+.coming li{padding:14px 0;border-bottom:1px solid var(--line)}
+.coming li:last-child{border-bottom:0;padding-bottom:0}
+.coming a{font-weight:600;text-decoration:none}
+.coming a:hover{color:var(--teal)}
+.coming .meta{display:block;font-size:13.5px;color:var(--muted);margin-top:2px}
+.docket-empty[hidden]{display:none}
+#docket-filter{margin:0 0 12px}
 .hint{font:400 13px/1.5 var(--sans);color:var(--muted);margin:10px 0 0}
 button{margin-top:22px;width:100%;padding:15px 18px;font:600 15px/1 var(--sans);letter-spacing:-.01em;color:var(--btn-text);background:var(--btn-bg);border:0;border-radius:12px;cursor:pointer;transition:transform .12s,opacity .15s}
 button:hover{opacity:.9}button:active{transform:translateY(1px)}
@@ -110,6 +124,7 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 
 /* Docket: the meeting list */
 .docket{list-style:none;margin:0;padding:0}
+.docket>li[hidden]{display:none}
 .docket>li+li{margin-top:4px}
 .docket a{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:14px 0;margin:0;text-decoration:none;border-radius:14px;transition:background .15s}
 .docket a:hover{background:var(--surface-2)}
@@ -170,6 +185,7 @@ a.hit:hover{border-color:var(--line-2);background:var(--surface-2)}
 .hit .kicker{font-size:11.5px;margin-bottom:8px}
 .hit h2{font-size:22px;line-height:1.3;letter-spacing:-.02em;margin:0 0 8px}
 .hit p{margin:0;font:400 15px/1.6 var(--sans);color:var(--text-2)}
+.hit p.vote,.stack .item p.vote,.docket p.vote,.lead p.vote{margin:0 0 8px;font:600 12.5px/1.45 var(--mono);color:var(--text)}
 a.hit:hover h2{color:var(--teal)}
 .search{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:end;margin:8px 0 24px}
 .search label{margin:0 0 8px}.search button{margin:0;width:100%;padding:14px 22px}
@@ -892,6 +908,45 @@ export function weekSentence(headline: string): string {
   return /[.!?]$/.test(s) ? s : `${s}.`;
 }
 
+/** The vote a card should show: a count such as "Approved 7–0", or "Unanimous" when that is all the transcript gave. */
+export function cardVote(actions: { outcome?: string; vote?: string }[] | undefined): string {
+  if (!actions?.length) return '';
+  const rows = actions.filter((a) => {
+    const vote = (a.vote ?? '').replace(/\s+/g, ' ').trim();
+    return vote && !/unclear|not stated|unknown|n\/a|^none$/i.test(vote);
+  });
+  if (!rows.length) return '';
+  const pick = rows.find((a) => /\d/.test(a.vote ?? '')) ?? rows[0];
+  let vote = (pick.vote ?? '').replace(/\s*[-–—]\s*/g, '–').replace(/\s+/g, ' ').trim();
+  const outcome = (pick.outcome ?? '').replace(/\s+/g, ' ').trim();
+  const short = /^(approved|passed|adopted|failed|rejected|postponed|tabled)$/i.test(outcome)
+    ? outcome.charAt(0).toUpperCase() + outcome.slice(1).toLowerCase()
+    : '';
+  if (short && new RegExp(`^${short}\\b`, 'i').test(vote)) vote = vote.slice(short.length).replace(/^[\s,–-]+/, '').trim();
+  const label = /^unanimous$/i.test(vote) ? (short ? `${short}, unanimous` : 'Unanimous') : short && vote ? `${short} ${vote}` : vote || short;
+  return label.length > 48 ? '' : label;
+}
+
+export interface ComingItem {
+  item: string;
+  when: string;
+  href: string;
+  body: string;
+}
+
+/** What the latest meetings said happens next, each line linking back to that recap. */
+export function comingSection(items: ComingItem[]): string {
+  if (!items.length) return '';
+  return `<section class="coming" id="coming"><h2 class="rubric">Coming up</h2>
+<p class="muted">What the latest meetings scheduled, or said would happen next.</p>
+<ul>${items
+    .map((c) => {
+      const meta = [c.when, c.body].filter(Boolean).map((s) => esc(s)).join(' · ');
+      return `<li><a href="${esc(c.href)}">${esc(c.item)}</a>${meta ? `<span class="meta">${meta}</span>` : ''}</li>`;
+    })
+    .join('')}</ul></section>`;
+}
+
 export interface NoteHit {
   id: string;
   title: string;
@@ -899,13 +954,15 @@ export interface NoteHit {
   date: string;
   headline: string;
   snippet: string;
+  /** "Approved 7–0", when the recap recorded a vote. */
+  vote: string;
 }
 
 export function hitList(hits: NoteHit[]): string {
   if (!hits.length) return '';
   return `<div class="hits">${hits
     .map(
-      (h) => `<a class="hit" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}${h.date ? ` <span class="meta" style="text-transform:none;letter-spacing:0;font-weight:500">· ${esc(h.date)}</span>` : ''}</div><h2>${esc(h.headline)}</h2><p>${h.snippet}</p></a>`,
+      (h) => `<a class="hit" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}${h.date ? ` <span class="meta" style="text-transform:none;letter-spacing:0;font-weight:500">· ${esc(h.date)}</span>` : ''}</div><h2>${esc(h.headline)}</h2>${h.vote ? `<p class="vote">${esc(h.vote)}</p>` : ''}<p>${h.snippet}</p></a>`,
     )
     .join('')}</div>`;
 }
@@ -961,6 +1018,10 @@ export interface WorkHit {
   headline: string;
   /** First paragraph of the recap. */
   summary: string;
+  /** "Approved 7–0", once a recap recorded a vote. */
+  vote: string;
+  /** Shown in the default docket. Older rows stay in the list for a body filter. */
+  featured: boolean;
 }
 
 /** "Wed, Oct 21, 2026" → weekday + "Oct 21" for the docket's date column. */
@@ -982,36 +1043,69 @@ function docketTitle(h: WorkHit): string {
   return `${h.body === 'Other' ? 'Borough' : h.body} meeting`;
 }
 
+function docketFilters(): string {
+  const bodies = BODIES.filter((b) => b.name !== 'Other');
+  return `<div class="chips" id="docket-filter" role="group" aria-label="Filter the docket by meeting">${
+    [`<button type="button" data-body="" aria-pressed="true">All</button>`]
+      .concat(bodies.map((b) => `<button type="button" data-body="${esc(b.name)}" aria-pressed="false">${esc(b.name)}</button>`))
+      .join('')
+  }</div>`;
+}
+
+const DOCKET_FILTER_JS = `<script>(function(){
+var root = document.getElementById('docket-filter');
+var list = document.getElementById('docket-list');
+if (!root || !list) return;
+var empty = document.getElementById('docket-empty');
+function apply(body) {
+  var shown = 0;
+  list.querySelectorAll(':scope > li').forEach(function(li) {
+    var ok = body ? li.getAttribute('data-body') === body : li.getAttribute('data-home') === '1';
+    li.hidden = !ok;
+    if (ok) shown++;
+  });
+  if (empty) empty.hidden = shown > 0;
+}
+root.addEventListener('click', function(e) {
+  var btn = e.target.closest('button');
+  if (!btn || !root.contains(btn)) return;
+  root.querySelectorAll('button').forEach(function(b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+  apply(btn.getAttribute('data-body') || '');
+});
+})();</script>`;
+
 export function workList(hits: WorkHit[]): string {
   if (!hits.length) return '';
-  return `<ul class="docket">${hits
+  const rows = hits
     .map((h) => {
       const title = docketTitle(h);
       const parts = h.headline ? sessionParts(h.title, h.body) : [];
       const href = h.headline ? noteHref(h.id, h.headline) : `/meetings/${encodeURIComponent(h.id)}`;
       const kind = h.body === 'Other' ? 'Other' : h.body;
-      return `<li><a href="${esc(href)}"><div class="when">${docketDate(h.date)}</div>
-<div><h3>${esc(title)}</h3>${parts.length ? `<ul class="parts">${parts.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>
+      return `<li data-body="${esc(h.body)}" data-home="${h.featured ? '1' : '0'}"${h.featured ? '' : ' hidden'}><a href="${esc(href)}"><div class="when">${docketDate(h.date)}</div>
+<div><h3>${esc(title)}</h3>${h.vote ? `<p class="vote">${esc(h.vote)}</p>` : ''}${parts.length ? `<ul class="parts">${parts.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>
 <div class="marks">${publicPill(h.status)}<span class="kind">${esc(kind)}</span></div></a></li>`;
     })
-    .join('')}</ul>`;
+    .join('');
+  return `${docketFilters()}<ul class="docket" id="docket-list">${rows}</ul>
+<p class="empty docket-empty" id="docket-empty" hidden>Nothing from that body in the current docket.</p>${DOCKET_FILTER_JS}`;
 }
 
 const METHOD = `<ol class="method">
 <li><b>Recorded</b>Every meeting the Borough posts to its video archive, and every meeting the City of Ketchikan posts on YouTube.</li>
 <li><b>Transcribed</b>Word for word, with each point linked to its moment in the video.</li>
 <li><b>Checked</b>Names and item numbers against the published roster and agenda, with context from local news.</li>
-<li><b>Reviewed</b>A person reads each recap before it's published or emailed.</li>
+<li><b>Reviewed</b>A person can mark a recap as reviewed. It goes on the site, and out by email and phone, as soon as it's written.</li>
 </ol>
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
 
-export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null) => {
+export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null, coming: ComingItem[] = []) => {
   // Lead with the newest written recap; fall back to a docket headline so the page is never empty.
   const draft = work.find((w) => w.headline);
   const lead = recent[0]
-    ? { href: noteHref(recent[0].id, recent[0].headline), body: recent[0].body, date: recent[0].date, headline: recent[0].headline, dek: recent[0].snippet, draft: false }
+    ? { href: noteHref(recent[0].id, recent[0].headline), body: recent[0].body, date: recent[0].date, headline: recent[0].headline, dek: recent[0].snippet, vote: recent[0].vote, draft: false }
     : draft
-      ? { href: `/meetings/${draft.id}`, body: draft.body, date: draft.date, headline: draft.headline, dek: esc(describe(draft.summary, 260)), draft: true }
+      ? { href: `/meetings/${draft.id}`, body: draft.body, date: draft.date, headline: draft.headline, dek: esc(describe(draft.summary, 260)), vote: draft.vote, draft: true }
       : null;
   const more = recent.slice(1, 5);
   const title = `${config.newsletterName}: Ketchikan Assembly, School Board, Planning and City Council meetings in plain language`;
@@ -1021,6 +1115,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
   const leadHtml = lead
     ? `<article class="lead"><div class="kicker">${esc(lead.body)}</div>
 <h2><a href="${esc(lead.href)}">${esc(lead.headline)}</a></h2>
+${lead.vote ? `<p class="vote">${esc(lead.vote)}</p>` : ''}
 <p class="dek">${lead.dek}</p>
 <p class="meta">${esc(lead.date)}</p>
 <a class="more" href="${esc(lead.href)}">Read the recap →</a></article>`
@@ -1029,7 +1124,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
   const moreHtml = more.length
     ? `<div class="stack">${more
         .map(
-          (h) => `<a class="item" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}</div><h3>${esc(h.headline)}</h3><p class="meta">${esc(h.date)}</p></a>`,
+          (h) => `<a class="item" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}</div><h3>${esc(h.headline)}</h3>${h.vote ? `<p class="vote">${esc(h.vote)}</p>` : ''}<p class="meta">${esc(h.date)}</p></a>`,
         )
         .join('')}</div>`
     : `<p class="empty">Earlier recaps will collect here.</p>`;
@@ -1051,7 +1146,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
   </div>
   <aside class="signup" id="subscribe">
     ${growth?.ref ? '<p class="invited">A neighbor invited you to read along.</p>' : ''}<h2>Get the recap</h2>
-    <p>One email after each meeting, usually the next day.</p>
+    <p>One email when a recap is written.</p>
     <form method="post" action="/subscribe"><input type="hidden" name="ref" value="${esc(growth?.ref ?? '')}">
       <label for="email">Email address</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
       ${bodyCheckboxes()}
@@ -1069,7 +1164,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
   <div><h2 class="rubric">Latest</h2>${leadHtml}</div>
   <div><h2 class="rubric">More recaps <a href="/notes">All →</a></h2>${moreHtml}</div>
 </section>
-
+${comingSection(coming)}
 <section class="grid">
   <div id="docket"><h2 class="rubric">The docket</h2>${docketIntro}${workList(work)}</div>
   <aside id="how"><h2 class="rubric">How we report</h2>${METHOD}</aside>
@@ -1077,7 +1172,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
 
 <section class="app-card" id="app">
 <h2>On your phone</h2>
-<p>Add this to your home screen. It can buzz when a recap is published.</p>
+<p>Add this to your home screen. It can buzz when a recap is written.</p>
 <div id="app-choose">
 <fieldset><legend>Which meetings should buzz?</legend><div class="chips">${notifyChoices()}</div></fieldset>
 </div>

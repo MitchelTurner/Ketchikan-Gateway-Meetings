@@ -55,7 +55,8 @@ export class PushService {
   async notifyRecap(meetingId: string): Promise<void> {
     try {
       const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
-      if (!meeting?.analysis?.approvedAt || meeting.analysis.hiddenAt) return;
+      if (!meeting?.analysis || meeting.analysis.hiddenAt || meeting.analysis.notifiedAt) return;
+      if (!normalizeDigest(meeting.analysis.data)) return;
       let base = '';
       try {
         base = config.publicBaseUrl;
@@ -67,12 +68,14 @@ export class PushService {
       const subs = (await this.prisma.pushSubscription.findMany()).filter(
         (s) => s.bodies.length === 0 || s.bodies.includes(meeting.body),
       );
-      if (!subs.length) return;
-      const keys = await this.keys();
-      webpush.setVapidDetails(this.subject(), keys.publicKey, keys.privateKey);
-      const payload = JSON.stringify(notice);
-      await Promise.all(subs.map((s) => this.sendOne(s, payload)));
-      this.log.log(`Notified ${subs.length} phone${subs.length === 1 ? '' : 's'} about ${notice.title}`);
+      if (subs.length) {
+        const keys = await this.keys();
+        webpush.setVapidDetails(this.subject(), keys.publicKey, keys.privateKey);
+        const payload = JSON.stringify(notice);
+        await Promise.all(subs.map((s) => this.sendOne(s, payload)));
+        this.log.log(`Notified ${subs.length} phone${subs.length === 1 ? '' : 's'} about ${notice.title}`);
+      }
+      await this.prisma.analysis.update({ where: { meetingId }, data: { notifiedAt: new Date() } });
     } catch (err) {
       this.log.warn(`Phone notifications failed: ${(err as Error).message}`);
     }

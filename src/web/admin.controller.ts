@@ -589,10 +589,25 @@ export class AdminController {
     if (!verify(`approve:${id}`, sig)) throw new ForbiddenException();
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
     if (!m) throw new NotFoundException();
-    if (m.analysis?.approvedAt) return page('Already approved', `<h1>Already approved</h1><p>${esc(m.title)} went out ${esc(m.analysis.approvedAt.toISOString())}.</p>`);
+    const mailed = m.status === 'SENT' || m.status === 'SENDING';
+    if (m.analysis?.approvedAt && (mailed || isBackfill(m) || !config.emailReady)) {
+      return page('Already approved', `<h1>Already approved</h1><p>${esc(m.title)} was marked reviewed ${esc(m.analysis.approvedAt.toISOString())}.</p>`);
+    }
+    if (m.analysis?.approvedAt && config.emailReady) {
+      const n = await this.prisma.subscriber.count({ where: { status: 'CONFIRMED', recaps: true, OR: [{ bodies: { isEmpty: true } }, { bodies: { has: m.body } }] } });
+      return page('Send recap', `<h1>Email this recap?</h1><p><strong>${esc(m.title)}</strong> was marked reviewed, and subscribers have not been emailed.<br>Goes to ${n} subscriber${n === 1 ? '' : 's'}.</p>
+<form method="post" action="/admin/meetings/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Send to subscribers</button></form>`);
+    }
     if (isBackfill(m)) {
       return page('Publish recap', `<h1>Publish this recap?</h1><p><strong>${esc(m.title)}</strong><br>An older meeting: it goes on the public notes page and is not emailed.</p>
 <form method="post" action="/admin/meetings/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Publish</button></form>`);
+    }
+    if (m.analysis?.notifiedAt && (mailed || !config.emailReady)) {
+      const note = mailed
+        ? 'Subscribers already have it. This only adds the “reviewed by a person” line.'
+        : 'Subscriber email is waiting until Resend is configured. This only adds the “reviewed by a person” line.';
+      return page('Mark reviewed', `<h1>Mark this recap reviewed?</h1><p><strong>${esc(m.title)}</strong><br>${note}</p>
+<form method="post" action="/admin/meetings/${esc(id)}/approve?sig=${esc(sig)}"><button type="submit">Mark reviewed</button></form>`);
     }
     const n = await this.prisma.subscriber.count({ where: { status: 'CONFIRMED', recaps: true, OR: [{ bodies: { isEmpty: true } }, { bodies: { has: m.body } }] } });
     return page('Approve recap', `<h1>Send this recap?</h1><p><strong>${esc(m.title)}</strong><br>Goes to ${n} subscriber${n === 1 ? '' : 's'}.</p>
@@ -606,9 +621,9 @@ export class AdminController {
     if (!verify(`approve:${id}`, sig)) throw new ForbiddenException();
     const a = await this.prisma.analysis.findUnique({ where: { meetingId: id } });
     if (!a) throw new NotFoundException();
-    if (!a.approvedAt) await this.pipeline.approve(id);
-    const m = await this.prisma.meeting.findUnique({ where: { id } });
-    if (m && isBackfill(m)) return page('Published', `<h1>Published</h1><p>The recap is on the <a href="/notes">notes page</a>. No email was sent.</p>`);
+    const result = await this.pipeline.approve(id);
+    if (result === 'published') return page('Published', `<h1>Published</h1><p>The recap is on the <a href="/notes">notes page</a>. No email was sent.</p>`);
+    if (result === 'reviewed') return page('Reviewed', `<h1>Marked reviewed</h1><p>The recap now says a person reviewed it.</p>`);
     return page('Sending', `<h1>Sending</h1><p>The recap is on its way to subscribers.</p>`);
   }
 

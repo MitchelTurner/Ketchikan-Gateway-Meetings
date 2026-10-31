@@ -69,6 +69,7 @@ model Analysis {
   model      String
   data       Json // MeetingDigest
   approvedAt DateTime?
+  notifiedAt DateTime? // phones buzzed (and subscriber mail queued) when the recap was first written; approval does not send again
   hiddenAt   DateTime? // taken off the public site from the admin dashboard
   editedAt   DateTime? // headline or summary changed by hand; automatic rewrites leave it alone
   createdAt  DateTime  @default(now())

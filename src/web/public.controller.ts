@@ -11,7 +11,7 @@ import {
   BADGES, badgeFor, communityGoal, confirmedReaders, ensureRefCode, FOUNDING_READERS, inviteUrl, readerNumber, REF_PATTERN, referralCount,
 } from '../referrals';
 import {
-  bodyCheckboxes, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
+  bodyCheckboxes, cardVote, ComingItem, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readCookie } from './stats.service';
@@ -68,14 +68,15 @@ export class PublicController {
   @Get()
   @Header('Content-Type', 'text/html; charset=utf-8')
   async home(@Req() req: Request) {
-    const [recent, work, archiveCount, growth, week] = await Promise.all([
+    const [recent, work, archiveCount, growth, week, coming] = await Promise.all([
       this.publishedHits('', '', 5),
       this.workHits(),
       this.prisma.meeting.count(),
       this.growth(req),
       this.weekBrief(),
+      this.comingUp(),
     ]);
-    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks', await this.topicOptions(), growth, week);
+    return signupPage(recent, work, archiveCount, shortDate(config.processSince, false) || 'the last two weeks', await this.topicOptions(), growth, week, coming);
   }
 
   /**
@@ -101,6 +102,35 @@ export class PublicController {
     const picked = current ? inLastWeek : rows.filter((r) => dayStamp(r.at) >= dayStamp(rows[0].at) - 6 * 86400000);
     const items = picked.slice(0, 5).sort((a, b) => a.at.getTime() - b.at.getTime());
     return { current, span: spanLabel(items.map((r) => r.at)), items: items.map(({ href, sentence }) => ({ href, sentence })) };
+  }
+
+  /** The next hearings and deadlines named in the newest written recaps. */
+  private async comingUp(): Promise<ComingItem[]> {
+    const meetings = await this.prisma.meeting.findMany({
+      where: { analysis: { is: { hiddenAt: null } } },
+      include: { analysis: true },
+      orderBy: [{ meetingDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+      take: 8,
+    });
+    const items: ComingItem[] = [];
+    const seen = new Set<string>();
+    for (const m of meetings) {
+      const digest = normalizeDigest(m.analysis?.data);
+      if (!digest) continue;
+      for (const upcoming of digest.upcoming) {
+        const key = upcoming.item.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          item: upcoming.item,
+          when: upcoming.when ?? '',
+          href: noteHref(m.id, digest.headline),
+          body: m.body,
+        });
+        if (items.length >= 5) return items;
+      }
+    }
+    return items;
   }
 
   /** Readers so far, the next goal, and the invite this visitor came in on (link first, then the remembered cookie). */
@@ -211,15 +241,18 @@ export class PublicController {
     return topicPage(topic, rows, dive, await this.topicOptions());
   }
 
-  /** Meetings inside the transcription window, newest first. Includes ones still downloading. */
+  /**
+   * Newest meetings, plus a few more of each body so a filter is not an empty list.
+   * The default docket is the newest handful; the rest appear when that body is chosen.
+   */
   private async workHits(): Promise<WorkHit[]> {
     const meetings = await this.prisma.meeting.findMany({
       where: { status: { not: 'SKIPPED' }, NOT: { analysis: { is: { hiddenAt: { not: null } } } } },
       include: { transcript: { select: { id: true } }, analysis: true },
       orderBy: [{ meetingDate: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
-      take: 20,
+      take: 200,
     });
-    return meetings.map((m) => {
+    const mapped = meetings.map((m) => {
       const digest = normalizeDigest(m.analysis?.data);
       return {
         id: m.id,
@@ -229,8 +262,18 @@ export class PublicController {
         status: m.status,
         headline: digest?.headline ?? '',
         summary: digest?.summary.split(/\n\s*\n/)[0] ?? '',
+        vote: digest ? cardVote(digest.actions) : '',
       };
     });
+    const featured = new Set(mapped.slice(0, 12).map((m) => m.id));
+    const perBody = new Map<string, number>();
+    const kept = mapped.filter((m) => {
+      const n = perBody.get(m.body) ?? 0;
+      if (!featured.has(m.id) && n >= 8) return false;
+      perBody.set(m.body, n + 1);
+      return true;
+    });
+    return kept.map((m) => ({ ...m, featured: featured.has(m.id) }));
   }
 
   @Get('meetings/:id')
@@ -268,6 +311,7 @@ export class PublicController {
         date: shortDate(m.meetingDate),
         headline: digest.headline,
         snippet: snippet(query ? plain : digest.summary, query),
+        vote: cardVote(digest.actions),
       });
       if (hits.length >= limit) break;
     }

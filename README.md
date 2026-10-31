@@ -3,10 +3,10 @@
 Watches the Ketchikan Gateway Borough [meeting video archive](https://www.kgbak.us/434/Meeting-Video-Archive), transcribes each new meeting, has Claude write a plain-language recap, and emails it to residents who sign up.
 
 ```
-every 3h ─▶ discover ─▶ process (1 at a time) ─────────────────────────────────────────────▶ review email to you
-            archive page  web research → yt-dlp audio → AssemblyAI/Whisper → Claude digest     │ approve link
-            + Granicus                                                                ▼
-            clips                                                 deliver ─▶ email queue (rate-limited)
+every 3h ─▶ discover ─▶ process (1 at a time) ──▶ site + subscriber email + phone buzz
+            archive page  web research → yt-dlp audio → AssemblyAI/Whisper → Claude digest
+            + Granicus
+            clips         review email to you (mark reviewed; does not send again)
 ```
 
 ## Stack
@@ -29,12 +29,12 @@ NestJS 11 · BullMQ on Redis · Prisma/Postgres · yt-dlp + ffmpeg · AssemblyAI
 |---|---|
 | `SKIPPED` | Dated before `PROCESS_SINCE` (or no date found). Force with `POST /admin/meetings/:id/process`. |
 | `RESEARCHING` → `DOWNLOADING` → `TRANSCRIBING` → `ANALYZING` | Working. Finished stages are saved and reused on retry. |
-| `AWAITING_APPROVAL` | Transcript and recap are saved. When Resend is configured, a review email goes to `ADMIN_EMAIL`. Until then, read the transcript on the meetings page. |
+| `AWAITING_APPROVAL` | Transcript and recap are saved and already on the site. Phones buzz as soon as it is written. Subscribers are emailed then too, once Resend is configured. A review email goes to `ADMIN_EMAIL`; marking it reviewed does not send again. |
 | `SENT` | Queued to subscribers. Per-subscriber results are in `EmailSend`. |
 | `PUBLISHED` | Older than `EMAIL_SINCE`: approved and on `/notes`, not emailed. |
 | `FAILED` | See `error`; retried automatically 3×, or re-run with the process endpoint. |
 
-Set `AUTO_SEND=true` to skip approval once you trust the output.
+Set `AUTO_SEND=true` to mark each new recap reviewed as soon as it is written. Subscribers are emailed either way, once Resend is configured. Meetings older than `EMAIL_SINCE` are never emailed.
 
 ## Backfilling older meetings
 Set `PROCESS_SINCE` back, e.g. `PROCESS_SINCE=2023-11-01` for three years, and redeploy. On start (and every discovery run), meetings that were saved as `SKIPPED` and now fall inside the window are queued.
@@ -104,10 +104,10 @@ Page views are also counted on the server: the IP address and browser are hashed
 - `POST /admin/publish-backfill` — publish every drafted recap older than `EMAIL_SINCE` on `/notes` (no email)
 - `GET /admin/stats`
 
-Resend can stay unset while you check a transcript. The meeting lands on `AWAITING_APPROVAL` and the review email is skipped. Add `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL`, and `MAILING_ADDRESS`, then open the meeting again or re-run process to send the review.
+Resend can stay unset while you check a transcript. The meeting lands on `AWAITING_APPROVAL`, phones can still buzz, and subscriber email waits. Add `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL`, and `MAILING_ADDRESS`, then approve that meeting to send the subscriber email once. Re-running process sends you the review note; it does not email recaps that were already written.
 
 ## Public pages
-`/` front page: signup, latest recaps, the docket of meetings being transcribed · `/topics` and `/topics/:slug` issues followed across meetings (suggested and approved; archived stays hidden) · `/meetings/:id` one meeting's transcript and recap · `/notes` newest written recaps, with search · `/notes/:id` one recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. A recap shows on `/notes` as soon as it's written. Email and the "reviewed by a person" line still wait for approval. Hidden recaps stay off every public page. Borough meetings and City of Ketchikan meetings (from the city's YouTube channel) are both included.
+`/` front page: signup, latest recaps (with the vote, when one was recorded), what the latest meetings said is coming up, and the docket of meetings being transcribed (filterable by body) · `/topics` and `/topics/:slug` issues followed across meetings (suggested and approved; archived stays hidden) · `/meetings/:id` one meeting's transcript and recap · `/notes` newest written recaps, with search · `/notes/:id` one recap · `/confirm/:token` · `/preferences/:token` (pick bodies) · `/unsubscribe/:token` (also RFC 8058 one-click). Light theme only. A recap shows on `/notes` as soon as it's written, and subscribers and phones are told then. The "reviewed by a person" line still waits for approval. Hidden recaps stay off every public page. Borough meetings and City of Ketchikan meetings (from the city's YouTube channel) are both included. A YouTube title with no day is dated from the opening of the transcript when that spoken date is within a week of the upload.
 
 The archive check runs when the server starts, not only on the 3-hour schedule. It also reads the City of Ketchikan YouTube channel (`CITY_YOUTUBE_URL`). Meetings in the processing window that stopped early (a deploy resets the in-container queue) are queued again, including ones that already have a transcript but never got a recap. Download and transcription are skipped when those stages are already saved.
 

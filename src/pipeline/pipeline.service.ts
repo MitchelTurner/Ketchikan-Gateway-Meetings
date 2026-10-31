@@ -19,7 +19,7 @@ import { Segment, TranscriptionService } from '../transcription/transcription.se
 import { parseYoutubeVtt, usableCaptions } from '../transcription/youtube-vtt';
 import { PushService } from '../push/push.service';
 import { ensureRefCode, inviteUrl, referralCount } from '../referrals';
-import { esc, sign, slugify } from '../util';
+import { esc, parseDateFromText, sign, slugify, spokenMeetingDate, transcriptOpening } from '../util';
 
 const BACKFILL_NOTE = 'Backfill: older than EMAIL_SINCE, so no email is sent. Approve to publish it on /notes.';
 
@@ -47,7 +47,7 @@ export class PipelineService {
 
   /** research → download → transcribe → analyze → (approval email | deliver). Each stage is skipped if already done. */
   async processMeeting(meetingId: string, opts: { refreshRecap?: boolean } = {}) {
-    const meeting = await this.prisma.meeting.findUniqueOrThrow({
+    let meeting = await this.prisma.meeting.findUniqueOrThrow({
       where: { id: meetingId },
       include: { research: true, transcript: true, analysis: true },
     });
@@ -56,6 +56,7 @@ export class PipelineService {
     try {
       // A refresh rewrites an unsent draft with the current sources; a sent recap stays as mailed.
       const redo = !!opts.refreshRecap && !!meeting.analysis && !meeting.analysis.approvedAt && !meeting.analysis.editedAt;
+      let wroteAnalysis = false;
       let context = meeting.research ? normalizeContext(meeting.research.data) : null;
       if (!context && (!meeting.analysis || redo) && config.researchEnabled) context = await this.runResearch(meeting);
       if (!meeting.transcript || !meeting.analysis || redo) {
@@ -98,10 +99,15 @@ export class PipelineService {
         }
       }
 
+      if (segments?.length && (!meeting.analysis || redo) && !parseDateFromText(meeting.title)) {
+        meeting = await this.alignSpokenDate(meeting, segments);
+      }
+
       if (!meeting.analysis) {
         await this.setStatus(meetingId, 'ANALYZING');
         const digest = await this.analysis.analyze(meeting, segments, context);
         await this.prisma.analysis.create({ data: { meetingId, model: this.analysis.model, data: digest as any } });
+        wroteAnalysis = true;
       } else if (redo) {
         await this.setStatus(meetingId, 'ANALYZING');
         try {
@@ -130,10 +136,12 @@ export class PipelineService {
         // Hundreds of old meetings must not each send a review email.
         if (config.autoSend) await this.approve(meetingId);
         else await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: BACKFILL_NOTE } });
-      } else if (config.autoSend && config.emailReady) {
+      } else if (config.autoSend) {
         await this.approve(meetingId);
       } else {
-        await this.sendReviewEmail(meetingId);
+        await this.sendReviewEmail(meetingId, wroteAnalysis);
+        // Only a recap written on this pass. A deploy that rewrites an older draft must not email the backlog.
+        if (wroteAnalysis) await this.releaseToReaders(meetingId);
       }
     } catch (err) {
       await this.prisma.meeting.update({
@@ -142,6 +150,25 @@ export class PipelineService {
       });
       throw err;
     }
+  }
+
+  /**
+   * A YouTube title often has no day, so the row is dated from the upload.
+   * If the chair says the meeting day in the opening, and that day is within
+   * a week of the upload, use the spoken day. A title that already has a date
+   * is left alone. Already-written recaps are not rewritten here.
+   */
+  private async alignSpokenDate<T extends { id: string; title: string; meetingDate: Date | null }>(
+    meeting: T,
+    segments: Segment[],
+  ): Promise<T> {
+    const next = spokenMeetingDate(transcriptOpening(segments), meeting.meetingDate);
+    if (!next) return meeting;
+    await this.prisma.meeting.update({ where: { id: meeting.id }, data: { meetingDate: next } });
+    this.log.log(
+      `${meeting.id}: meeting date ${meeting.meetingDate?.toISOString().slice(0, 10) ?? 'none'} → ${next.toISOString().slice(0, 10)} from the transcript`,
+    );
+    return { ...meeting, meetingDate: next };
   }
 
   /**
@@ -205,7 +232,7 @@ export class PipelineService {
    * The transcript and recap are already saved. A missing Resend setup, or a
    * send failure, must not mark that work FAILED.
    */
-  private async sendReviewEmail(meetingId: string) {
+  private async sendReviewEmail(meetingId: string, releasing: boolean) {
     if (!config.emailReady) {
       const note = 'Transcript is ready. Review email skipped until Resend is configured.';
       await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: note } });
@@ -213,7 +240,7 @@ export class PipelineService {
       return;
     }
     try {
-      await this.sendApprovalPreview(meetingId);
+      await this.sendApprovalPreview(meetingId, releasing);
     } catch (err) {
       const note = `Transcript is ready. Review email was not sent: ${(err as Error).message}`.slice(0, 2000);
       await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'AWAITING_APPROVAL', error: note } });
@@ -221,11 +248,14 @@ export class PipelineService {
     }
   }
 
-  async sendApprovalPreview(meetingId: string) {
+  async sendApprovalPreview(meetingId: string, releasing = false) {
     const input = await this.renderInput(meetingId, null);
+    const lead = releasing
+      ? 'Subscribers are being emailed this recap. Check it against the video, then'
+      : 'This recap is on the site. Check it against the video, then';
     input.banner = `<div style="background:#fff7e0;border:1px solid #e8c766;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:14px;line-height:1.5">
-<strong>Preview — not sent to subscribers yet.</strong><br>Check the recap against the video, then
-<a href="${esc(this.approveUrl(meetingId))}" style="color:#0b5d7a;font-weight:600">approve and send</a>.${
+<strong>For your review.</strong><br>${lead}
+<a href="${esc(this.approveUrl(meetingId))}" style="color:#0b5d7a;font-weight:600">mark it reviewed</a>.${
       input.digest.nameCorrections.length
         ? `<br><br>Names corrected from the transcript: ${input.digest.nameCorrections.map((f) => `${esc(f.heard)} → <strong>${esc(f.corrected)}</strong>`).join(', ')}`
         : ''
@@ -238,15 +268,59 @@ export class PipelineService {
     });
   }
 
-  /** Marks the recap approved and fans out to subscribers. Backfill is published on /notes only. */
-  async approve(meetingId: string) {
-    await this.prisma.analysis.update({ where: { meetingId }, data: { approvedAt: new Date() } });
-    const meeting = await this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } });
+  /**
+   * Marks the recap reviewed. Subscriber mail and the phone buzz already went
+   * out when the recap was written; this does not send them again. A recap
+   * that never reached readers (an older draft, or mail that was not ready)
+   * is sent now. Backfill is published on /notes only.
+   */
+  async approve(meetingId: string): Promise<'published' | 'reviewed' | 'sending'> {
+    const existing = await this.prisma.analysis.findUniqueOrThrow({ where: { meetingId } });
+    if (!existing.approvedAt) {
+      await this.prisma.analysis.update({ where: { meetingId }, data: { approvedAt: new Date() } });
+    }
+    const meeting = await this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId }, include: { analysis: true } });
     if (isBackfill(meeting)) {
       await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'PUBLISHED', error: null } });
+      return 'published';
+    }
+    const mailed = meeting.status === 'SENT' || meeting.status === 'SENDING';
+    if (mailed) {
+      void this.push.notifyRecap(meetingId);
+      return 'reviewed';
+    }
+    if (!config.emailReady) {
+      void this.push.notifyRecap(meetingId);
+      await this.prisma.meeting.update({ where: { id: meetingId }, data: { status: 'PUBLISHED', error: null } });
+      return 'reviewed';
+    }
+    await this.enqueueDeliver(meetingId);
+    return 'sending';
+  }
+
+  /** Emails confirmed subscribers, then buzzes phones. One job per meeting, so a second approval does not queue another. */
+  private async enqueueDeliver(meetingId: string): Promise<void> {
+    try {
+      await this.controlQ.add('deliver', { meetingId }, { jobId: `deliver-${meetingId}`, removeOnComplete: 200 });
+    } catch (err) {
+      this.log.warn(`${meetingId}: subscriber email already queued or could not be queued: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * The recap is on the site. Tell subscribers and phones now, without waiting
+   * for a person to review it. Backfill stays quiet, and a second pass does
+   * nothing once phones were already buzzed.
+   */
+  private async releaseToReaders(meetingId: string): Promise<void> {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
+    if (!meeting?.analysis || meeting.analysis.hiddenAt || meeting.analysis.notifiedAt) return;
+    if (isBackfill(meeting)) return;
+    if (config.emailReady) {
+      await this.enqueueDeliver(meetingId);
       return;
     }
-    await this.controlQ.add('deliver', { meetingId }, { jobId: `deliver-${meetingId}`, removeOnComplete: 200 });
+    void this.push.notifyRecap(meetingId);
   }
 
   /** Approves a recap for the website without emailing anyone, whatever its date. */
@@ -267,6 +341,11 @@ export class PipelineService {
   }
 
   async deliver(meetingId: string) {
+    if (!config.emailReady) {
+      this.log.warn(`${meetingId}: subscriber email skipped until Resend is configured`);
+      void this.push.notifyRecap(meetingId);
+      return;
+    }
     const meeting = await this.prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } });
     await this.setStatus(meetingId, 'SENDING');
     const subs = await this.prisma.subscriber.findMany({
