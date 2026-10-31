@@ -283,9 +283,12 @@ a.hit:hover h2{color:var(--teal)}
 .ask h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
 .ask p{font:400 15.5px/1.5 var(--sans);color:var(--text-2);margin:0}
 .ask fieldset{margin-top:16px}
+.ask form{margin-top:16px}
+.ask label{margin:0 0 8px}
 .ask .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
 .ask button{margin:0}
-.ask button.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-2)}
+.ask button.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-2);margin-top:8px}
+.ask .hint{margin-top:12px}
 
 /* Footer: the note, then the links the bottom bar doesn't cover. */
 footer.site{position:relative;margin-top:56px;border-top:1px solid var(--line);padding:28px 0 8px;font:400 15px/1.6 var(--sans);color:var(--text-2)}
@@ -425,27 +428,67 @@ function notifyChoices(): string {
     .join('');
 }
 
-/** Asks once, on any public page, whether this phone wants a buzz and for which meetings. */
-function askDialog(): string {
-  return `<dialog class="ask" id="app-ask" aria-labelledby="app-ask-title"><div class="sheet">
-<h2 id="app-ask-title">Want a buzz when a meeting is recapped?</h2>
-<p>Pick the meetings. You can change this anytime.</p>
-<fieldset><legend>Which meetings?</legend><div class="chips">${notifyChoices()}</div></fieldset>
-<p class="hint" id="app-ask-note"></p>
-<div class="actions"><button type="button" id="app-ask-yes">Allow notifications</button><button type="button" id="app-ask-no" class="ghost">Not now</button></div>
+/** Email signup, shown once until this browser subscribes or clicks it away. */
+function signupDialog(): string {
+  return `<dialog class="ask" id="signup-ask" aria-labelledby="signup-ask-title"><div class="sheet">
+<h2 id="signup-ask-title">Get the recap</h2>
+<p>One email when a recap is written.</p>
+<form method="post" action="/subscribe"><input type="hidden" name="ref" value="">
+<label for="signup-email">Email address</label>
+<input id="signup-email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
+<button type="submit">Subscribe</button></form>
+<p class="hint">Confirm by email. One-click unsubscribe in every message.</p>
+<button type="button" class="ghost" id="signup-ask-no">Not now</button>
 </div></dialog>`;
 }
 
-/** Registers the app, prompts for notifications, and saves which meetings this phone wants. */
+/** Remembers on this browser that the reader signed up, or clears that after they unsubscribe. */
+export function signupRemember(on: boolean): string {
+  const op = on ? "localStorage.setItem('kgb-signup','on')" : "localStorage.removeItem('kgb-signup')";
+  return `<script>try{${op}}catch(e){}</script>`;
+}
+
+/** Opens the signup dialog unless this browser already subscribed or closed it. Clicking the backdrop closes it. */
+const SIGNUP_JS = `<script>(function(){
+var ask = document.getElementById('signup-ask');
+if (!ask) return;
+var KEY = 'kgb-signup';
+function state() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
+function remember(v) { try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (e) {} }
+function signed() {
+  if (state() === 'on') return true;
+  return /(?:^|; )kgb_signed=1(?:;|$)/.test(document.cookie);
+}
+var ref = (document.cookie.match(/(?:^|; )kgb_ref=([^;]*)/) || [])[1] || '';
+var refInput = ask.querySelector('input[name=ref]');
+if (ref && refInput) { try { refInput.value = decodeURIComponent(ref); } catch (e) { refInput.value = ref; } }
+var leaving = false;
+var form = ask.querySelector('form');
+if (form) form.addEventListener('submit', function() { leaving = true; });
+ask.addEventListener('click', function(e) { if (e.target === ask) ask.close(); });
+var no = document.getElementById('signup-ask-no');
+if (no) no.addEventListener('click', function() { ask.close(); });
+ask.addEventListener('close', function() { if (!leaving && state() !== 'on') remember('later'); });
+if (signed()) { remember('on'); return; }
+if (state() === 'later') return;
+var path = location.pathname;
+if (path === '/subscribe' || path.indexOf('/confirm/') === 0 || path.indexOf('/preferences/') === 0 || path.indexOf('/unsubscribe/') === 0) return;
+if (location.hash === '#subscribe') return;
+setTimeout(function() {
+  if (location.hash === '#subscribe' || state() === 'later' || state() === 'on') return;
+  try { ask.showModal(); } catch (e) {}
+}, 700);
+})()</script>`;
+
+/** Registers the app and saves which meetings this phone wants. It does not ask on its own. */
 const APP_JS = `<script>(function(){
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 var notifyBtn = document.getElementById('app-notify');
 var offBtn = document.getElementById('app-off');
 var note = document.getElementById('app-note');
-var ask = document.getElementById('app-ask');
 var installBtn = document.getElementById('app-install');
 var KEY = 'kgb-notify';
-function say(t) { if (note) note.textContent = t; var n = document.getElementById('app-ask-note'); if (n && ask && ask.open) n.textContent = t; }
+function say(t) { if (note) note.textContent = t; }
 function pref() { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } }
 function savePref(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
 function boxes(root) { return Array.prototype.slice.call((root || document).querySelectorAll('input.app-body')); }
@@ -467,7 +510,6 @@ function b64url(s) {
   for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
   return a;
 }
-function closeAsk() { if (ask && ask.open) ask.close(); }
 function showManaging() {
   if (notifyBtn) { notifyBtn.hidden = false; notifyBtn.textContent = 'Save choices'; }
   if (offBtn) offBtn.hidden = false;
@@ -494,27 +536,12 @@ if (installBtn) {
 }
 var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
 var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-if (ask) {
-  ask.addEventListener('cancel', function() { var p = pref(); p.asked = 'later'; savePref(p); });
-  var no = document.getElementById('app-ask-no');
-  if (no) no.addEventListener('click', function() { var p = pref(); p.asked = 'later'; savePref(p); closeAsk(); });
-}
 if (ios && !standalone) {
   var choose = document.getElementById('app-choose');
   if (choose) choose.hidden = true;
   if (notifyBtn) notifyBtn.hidden = true;
   if (offBtn) offBtn.hidden = true;
   say('On iPhone, tap Share, then Add to Home Screen. Open that icon, then pick which meetings can buzz.');
-  if (ask && pref().asked !== 'later' && pref().asked !== 'on') {
-    var lead = ask.querySelector('h2');
-    var copy = ask.querySelector('p');
-    if (lead) lead.textContent = 'Add Recaps to your home screen';
-    if (copy) copy.textContent = 'On iPhone, notifications start there. Tap Share, then Add to Home Screen. Open the icon and pick which meetings can buzz.';
-    var yesIos = document.getElementById('app-ask-yes');
-    if (yesIos) yesIos.hidden = true;
-    if (no) no.textContent = 'OK';
-    setTimeout(function() { try { ask.showModal(); } catch (e) {} }, 700);
-  }
   return;
 }
 function post(sub, bodies) {
@@ -523,7 +550,6 @@ function post(sub, bodies) {
   return fetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function(r) {
     if (!r.ok) throw new Error('save');
     var p = pref(); p.asked = 'on'; p.bodies = bodies; savePref(p); apply(p);
-    closeAsk();
     showManaging();
   });
 }
@@ -532,7 +558,7 @@ function turnOn(root) {
   if (bodies === null) { say('Pick at least one meeting.'); return; }
   if (!('Notification' in window) || !('PushManager' in window)) { say('This browser cannot send notifications yet.'); return; }
   Notification.requestPermission().then(function(perm) {
-    if (perm !== 'granted') { say('Notifications stay off until you allow them.'); closeAsk(); return; }
+    if (perm !== 'granted') { say('Notifications stay off until you allow them.'); return; }
     return fetch('/push/vapid').then(function(r) { if (!r.ok) throw new Error('key'); return r.json(); }).then(function(key) {
       return navigator.serviceWorker.ready.then(function(reg) {
         return reg.pushManager.getSubscription().then(function(existing) {
@@ -542,10 +568,6 @@ function turnOn(root) {
       });
     }).then(function(sub) { return post(sub, bodies); });
   }).catch(function() { say('That did not stick. Try again in a minute.'); });
-}
-if (ask) {
-  var yes = document.getElementById('app-ask-yes');
-  if (yes) yes.addEventListener('click', function() { turnOn(ask); });
 }
 if (!('Notification' in window) || !('PushManager' in window)) {
   say('Use your browser menu to add this to your home screen, then open it and allow notifications.');
@@ -569,16 +591,10 @@ if (offBtn) offBtn.addEventListener('click', function() {
     say('Notifications are off on this phone.');
   }).catch(function() { say('That did not stick. Try again in a minute.'); });
 });
-function maybeAsk() {
-  if (!ask || pref().asked === 'later' || pref().asked === 'on') return;
-  if (Notification.permission !== 'default') return;
-  setTimeout(function() { try { ask.showModal(); } catch (e) {} }, 700);
-}
 navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
   if (sub) { var p = pref(); p.asked = 'on'; savePref(p); showManaging(); return; }
   showReady();
-  maybeAsk();
-}).catch(function() { showReady(); maybeAsk(); });
+}).catch(function() { showReady(); });
 })()</script>`;
 
 function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo; css?: string; bodyClass?: string } = {}): string {
@@ -590,9 +606,10 @@ ${seoTags(title, opts.seo ?? {})}
 ${main}
 ${footer()}
 ${desk ? '' : tabbar()}
-${desk ? '' : askDialog()}
+${desk ? '' : signupDialog()}
 ${SHARE_JS}
 ${desk ? '' : TAB_JS}
+${desk ? '' : SIGNUP_JS}
 ${desk ? '' : APP_JS}
 </body></html>`;
 }

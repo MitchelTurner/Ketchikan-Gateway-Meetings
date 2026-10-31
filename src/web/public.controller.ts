@@ -12,7 +12,7 @@ import {
   BADGES, badgeFor, communityGoal, confirmedReaders, ensureRefCode, FOUNDING_READERS, inviteUrl, readerNumber, REF_PATTERN, referralCount,
 } from '../referrals';
 import {
-  bodyCheckboxes, ComingItem, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
+  bodyCheckboxes, ComingItem, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readCookie } from './stats.service';
@@ -28,6 +28,13 @@ function publicDigest(data: unknown): MeetingDigest | null {
 const MIC_CHECK = 'This recording is only a microphone check, so there is no recap.';
 const normBodies = (v: unknown): string[] =>
   (Array.isArray(v) ? v : v ? [v] : []).map(String).filter((b) => VALID_BODIES.has(b));
+
+/** This browser asked for the email. Not a login. Cleared when they unsubscribe. */
+function rememberSignup(res: Response, req: Request, on: boolean): void {
+  const secure = String(req.headers['x-forwarded-proto'] ?? '').startsWith('https') ? '; Secure' : '';
+  const maxAge = on ? 365 * 24 * 3600 : 0;
+  res.append('Set-Cookie', `kgb_signed=${on ? '1' : ''}; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure}`);
+}
 
 @Controller()
 export class PublicController {
@@ -403,15 +410,16 @@ export class PublicController {
         );
       }
     }
+    rememberSignup(res, req, true);
     return page(
       'Check your inbox',
-      `<h1>Check your inbox</h1><p>We sent a confirmation link to <strong>${esc(email)}</strong>. Recaps start once you tap it.</p>${stepList(2)}<p class="hint">Nothing there? Check spam or promotions, or <a href="/">sign up again</a>.</p>`,
+      `<h1>Check your inbox</h1><p>We sent a confirmation link to <strong>${esc(email)}</strong>. Recaps start once you tap it.</p>${stepList(2)}<p class="hint">Nothing there? Check spam or promotions, or <a href="/">sign up again</a>.</p>${signupRemember(true)}`,
     );
   }
 
   @Get('confirm/:token')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async confirm(@Param('token') token: string) {
+  async confirm(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     let sub = await this.prisma.subscriber.findUnique({ where: { token } });
     if (!sub) return page('Link expired', `<h1>That link didn't work</h1><p><a href="/">Sign up again</a>.</p>`);
     if (sub.status !== 'CONFIRMED') {
@@ -420,12 +428,13 @@ export class PublicController {
       if (firstTime && sub.referredById) await this.thankInviter(sub.referredById);
     }
     const readerNo = await readerNumber(this.prisma, sub.confirmedAt!);
+    rememberSignup(res, req, true);
     return page(
       'Subscribed',
       `<h1>You're subscribed</h1>${stepList(3)}
 <div class="reader-no"><span>You are reader</span><strong>#${readerNo.toLocaleString('en-US')}</strong><span>of ${esc(config.newsletterName)}</span></div>
 <p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a>.</p>
-${await this.kit(sub)}`,
+${await this.kit(sub)}${signupRemember(true)}`,
       true,
     );
   }
@@ -479,21 +488,24 @@ ${await this.kit(sub)}`,
   @Post('unsubscribe/:token')
   @HttpCode(200)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async unsubscribe(@Param('token') token: string) {
+  async unsubscribe(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.prisma.subscriber.updateMany({ where: { token }, data: { status: 'UNSUBSCRIBED' } });
-    return page('Unsubscribed', `<h1>You're unsubscribed</h1><p>You won't get any more recaps. <a href="/">Changed your mind?</a></p>`);
+    rememberSignup(res, req, false);
+    return page('Unsubscribed', `<h1>You're unsubscribed</h1><p>You won't get any more recaps. <a href="/">Changed your mind?</a></p>${signupRemember(false)}`);
   }
 
   @Get('preferences/:token')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async prefsForm(@Param('token') token: string) {
+  async prefsForm(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const sub = await this.prisma.subscriber.findUnique({ where: { token } });
     if (!sub) return page('Not found', `<h1>That link didn't work</h1>`);
+    const on = sub.status !== 'UNSUBSCRIBED';
+    if (on) rememberSignup(res, req, true);
     return page(
       'Your email',
       `<h1>Your subscription</h1>${sub.status === 'CONFIRMED' ? await this.kit(sub) : ''}<h2 class="section">What you get</h2><form method="post" action="/preferences/${esc(token)}">
 <label class="check" style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="checkbox" name="recaps" value="1"${sub.recaps ? ' checked' : ''}> A recap after each meeting</label>
-${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicChoices(sub.topics), sub.topics)}<button type="submit">Save</button></form>`,
+${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicChoices(sub.topics), sub.topics)}<button type="submit">Save</button></form>${on ? signupRemember(true) : ''}`,
       true,
     );
   }
@@ -501,12 +513,20 @@ ${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicChoices(sub.topic
   @Post('preferences/:token')
   @HttpCode(200)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async prefsSave(@Param('token') token: string, @Body() body: { bodies?: string | string[]; topics?: string | string[]; recaps?: string }) {
+  async prefsSave(
+    @Param('token') token: string,
+    @Body() body: { bodies?: string | string[]; topics?: string | string[]; recaps?: string },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const sub = await this.prisma.subscriber.findUnique({ where: { token }, select: { status: true } });
     await this.prisma.subscriber.updateMany({
       where: { token },
       data: { bodies: normBodies(body.bodies), topics: await this.normTopics(body.topics), recaps: body.recaps === '1' },
     });
-    return page('Saved', `<h1>Saved</h1><p>Your choices are updated.</p>`);
+    const on = !!sub && sub.status !== 'UNSUBSCRIBED';
+    if (on) rememberSignup(res, req, true);
+    return page('Saved', `<h1>Saved</h1><p>Your choices are updated.</p>${on ? signupRemember(true) : ''}`);
   }
 }
 
