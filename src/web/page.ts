@@ -4,6 +4,7 @@ import { MeetingDigest } from '../analysis/analysis.service';
 import type { DeepDiveArticle } from '../topics/deep-dive.service';
 import { BOROUGH_POPULATION, FOUNDING_READERS } from '../referrals';
 import { BODIES, esc, formatDate, hms, isCityBody, meetingParts, shortDate, slugify } from '../util';
+import { topicSearchScript, topicTools } from './topic-search';
 
 export { slugify };
 
@@ -240,8 +241,12 @@ a.hit:hover h2{color:var(--teal)}
 .tlist .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;margin-top:7px}
 .tlist .n{font:500 13px/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .tlist li[hidden]{display:none}
+.tlist .why{margin:4px 0 0;font:400 13.5px/1.45 var(--sans);color:var(--muted)}
+.tlist .why[hidden]{display:none}
+.flag.once{color:var(--muted);background:var(--surface-2);margin-left:8px;text-transform:none;letter-spacing:0;font-size:11px}
 .topic-find{margin:0 0 4px}
 .topic-find label{margin:0 0 8px}
+#topic-count{margin:8px 0 0}
 .score{display:flex;gap:16px;align-items:center;margin:26px 0 4px;font:400 14.5px/1.45 var(--sans);color:var(--text-2)}
 .score strong{font:600 40px/1 var(--sans);letter-spacing:-.04em;color:var(--text)}
 .score b{color:var(--text)}
@@ -1412,6 +1417,10 @@ export interface TopicsBoard {
   featured: TopicBar[];
   popular: TopicBar[];
   all: TopicBar[];
+  /** Issues that came up at more than one meeting. */
+  returning: number;
+  /** Issues mentioned at a single meeting. Hidden until search. */
+  once: number;
 }
 
 const DAY = 86_400_000;
@@ -1467,6 +1476,7 @@ export function buildTopicsBoard(topics: TopicInput[], today: Date): TopicsBoard
   const trending = risers.length >= 3;
   const featured = (trending ? risers : bars.filter((t) => t.recent > 0).sort(byRecent)).slice(0, 6);
   const all = [...bars].sort((a, b) => b.meetings - a.meetings || a.name.localeCompare(b.name));
+  const once = all.filter((t) => t.meetings === 1).length;
   return {
     total: all.length,
     active: bars.filter((t) => t.recent > 0).length,
@@ -1474,12 +1484,14 @@ export function buildTopicsBoard(topics: TopicInput[], today: Date): TopicsBoard
     monthLabels,
     trending,
     featured,
-    popular: all.slice(0, 8),
+    popular: all.filter((t) => t.meetings > 1).slice(0, 8),
     all,
+    returning: all.length - once,
+    once,
   };
 }
 
-export function topicsIndexPage(board: TopicsBoard): string {
+export function topicsIndexPage(board: TopicsBoard, query = ''): string {
   const description = 'Which Ketchikan issues come up most often, and which ones are coming up more than they used to. Each topic follows one issue from meeting to meeting.';
   const empty = '<p class="empty">Topics appear here once issues have been picked out of the recaps.</p>';
   if (!board.total) {
@@ -1522,38 +1534,62 @@ export function topicsIndexPage(board: TopicsBoard): string {
         `<li><a href="/topics/${esc(t.slug)}" style="grid-template-columns:22px minmax(0,1fr)"><span class="rank${i === 0 ? ' top' : ''}">${i + 1}</span><span><h3>${esc(t.name)}</h3><p class="meta">${t.meetings} meeting${t.meetings === 1 ? '' : 's'}${t.lastDate ? ` · Latest ${esc(t.lastDate)}` : ''}</p>${bar(t.meetings, peakAll)}</span></a></li>`,
     )
     .join('');
-  const allRows = board.all
-    .map(
-      (t) =>
-        `<li data-find="${esc(`${t.name} ${t.description}`.toLowerCase())}"><a href="/topics/${esc(t.slug)}"><h3>${esc(t.name)}</h3><span class="row">${bar(t.meetings, peakAll)}<span class="n">${t.meetings}</span></span></a></li>`,
-    )
+  const tuck = board.once > 0 && board.returning > 0;
+  const wanted = query.replace(/\s+/g, ' ').trim();
+  const ranked = board.all.map((t, order) => {
+    const once = t.meetings === 1;
+    const blob = `${t.description} ${t.latest} ${t.slug.replace(/-/g, ' ')}${once ? ' mentioned once one meeting' : ''}`;
+    const result = wanted
+      ? topicTools(t.name, blob, t.description, t.latest, wanted, once)
+      : { score: !tuck || !once ? 1 : 0, why: '' };
+    return { t, order, once, blob, result };
+  });
+  if (wanted) {
+    ranked.sort((a, b) => b.result.score - a.result.score || b.t.meetings - a.t.meetings || a.t.name.localeCompare(b.t.name) || a.order - b.order);
+  }
+  const matches = ranked.filter((row) => row.result.score > 0);
+  const onceShown = matches.filter((row) => row.once).length;
+  const plain = (s: string) => esc(s.replace(/\s+/g, ' ').trim());
+  const allRows = ranked
+    .map((row) => {
+      const t = row.t;
+      const show = row.result.score > 0;
+      const why = show ? row.result.why : '';
+      return `<li data-once="${row.once ? '1' : '0'}" data-meetings="${t.meetings}" data-order="${row.order}" data-name="${plain(t.name)}" data-find="${plain(row.blob)}" data-desc="${plain(t.description)}" data-latest="${plain(t.latest)}"${show ? '' : ' hidden'}><a href="/topics/${esc(t.slug)}"><h3>${esc(t.name)}</h3>${why ? `<p class="why">${esc(why)}</p>` : '<p class="why" hidden></p>'}<span class="row">${bar(t.meetings, peakAll)}<span class="n">${t.meetings}${row.once ? ' <span class="flag once">Once</span>' : ''}</span></span></a></li>`;
+    })
     .join('');
+  const countLine = wanted && matches.length
+    ? `${matches.length} ${matches.length === 1 ? 'match' : 'matches'}${onceShown ? ` · ${onceShown} mentioned once` : ''}`
+    : '';
+  const listTitle = tuck ? 'Issues that returned' : 'Every issue';
+  const listNote = tuck
+    ? `These came up at more than one meeting, longest bar first. ${board.once.toLocaleString('en-US')} ${board.once === 1 ? 'was' : 'were'} mentioned once. Search brings those up too, including a word from the discussion.`
+    : `Longest bars first. ${board.total.toLocaleString('en-US')} in all.`;
+  const facts = [
+    `<b>${board.total.toLocaleString('en-US')}</b> issues`,
+    tuck ? `<b>${board.returning.toLocaleString('en-US')}</b> came up more than once` : '',
+    `<b>${board.active.toLocaleString('en-US')}</b> in the last 90 days`,
+    `<b>${board.rising.toLocaleString('en-US')}</b> rising`,
+  ].filter(Boolean).join(' · ');
   return shell(
     `Ketchikan issues to follow · ${config.newsletterName}`,
     `<main class="wrap"><div class="article">
 <div class="kicker">Topics</div>
 <h1>The issues, meeting by meeting</h1>
 <p class="dek">Some questions take months. The bars show which issues come up most, and which ones are coming up more often than they used to.</p>
-<p class="facts"><b>${board.total.toLocaleString('en-US')}</b> issues · <b>${board.active.toLocaleString('en-US')}</b> in the last 90 days · <b>${board.rising.toLocaleString('en-US')}</b> rising</p>
+<p class="facts">${facts}</p>
 <section class="tsec"><h2 class="rubric">${board.trending ? 'Trending' : 'Busiest lately'}</h2><p class="note">${featuredNote}</p><ol class="trank">${featuredRows}</ol></section>
 <section class="tsec"><h2 class="rubric">Most discussed</h2><p class="note">Counted across every meeting on record. The longest bar is the issue that has come up most.</p><ol class="trank">${popularRows}</ol></section>
-<section class="tsec" id="all"><h2 class="rubric">Every issue</h2><p class="note">Longest bars first. ${board.total.toLocaleString('en-US')} in all.</p>
-<div class="topic-find"><label for="topic-find">Find an issue</label><input id="topic-find" type="search" placeholder="Harbor, budget, hospital…" autocomplete="off" enterkeyhint="search"></div>
+<section class="tsec" id="all"><h2 class="rubric">${listTitle}</h2><p class="note">${listNote}</p>
+<form class="topic-find" method="get" action="/topics" role="search"><label for="topic-find">Find an issue</label><input id="topic-find" type="search" name="q" value="${esc(wanted)}" placeholder="Harbor, budget, PeaceHealth, proclamation…" autocomplete="off" enterkeyhint="search"></form>
+<p id="topic-count" class="note"${countLine ? '' : ' hidden'}>${esc(countLine)}</p>
 <ul class="tlist" id="topic-all">${allRows}</ul>
-<p id="topic-none" class="empty" hidden>No issue with that name.</p>
+<p id="topic-none" class="empty"${matches.length ? ' hidden' : ''}>Nothing matches that. Try a shorter word, or a place, a project, or part of what was said.</p>
 </section>
 <div class="signup"><h2>Follow an issue</h2><p>Pick topics when you <a href="/#subscribe">subscribe</a>, or from the link at the bottom of any email.</p></div>
 </div></main>
-<script>(function(){
-var q=document.getElementById('topic-find'),rows=document.querySelectorAll('#topic-all li'),none=document.getElementById('topic-none');
-if(!q)return;
-q.addEventListener('input',function(){
-  var s=q.value.trim().toLowerCase(),n=0;
-  rows.forEach(function(li){var show=!s||(li.getAttribute('data-find')||'').indexOf(s)!==-1;li.hidden=!show;if(show)n++;});
-  if(none)none.hidden=n!==0;
-});
-})();</script>`,
-    { seo: { description, canonical: '/topics' } },
+${topicSearchScript()}`,
+    { seo: { description, canonical: wanted ? undefined : '/topics', noindex: Boolean(wanted) } },
   );
 }
 

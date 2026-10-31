@@ -176,7 +176,8 @@ export class PublicController {
 
   @Get('topics')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async topics() {
+  async topics(@Query('q') q?: string) {
+    const query = String(q ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
     const topics = await this.prisma.topic.findMany({
       where: { status: { not: 'ARCHIVED' }, meetings: { some: {} } },
       include: { meetings: { include: { meeting: { select: { meetingDate: true, analysis: { select: { hiddenAt: true } } } } } } },
@@ -194,7 +195,7 @@ export class PublicController {
         dates: visible.flatMap((l) => (l.meeting.meetingDate ? [l.meeting.meetingDate] : [])),
       }];
     });
-    return topicsIndexPage(buildTopicsBoard(rows, zonedNoon(config.timezone)));
+    return topicsIndexPage(buildTopicsBoard(rows, zonedNoon(config.timezone)), query);
   }
 
   @Get('topics/:slug')
