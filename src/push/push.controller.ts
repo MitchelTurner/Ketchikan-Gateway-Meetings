@@ -87,10 +87,11 @@ export class PushController {
 
   @Post('push/subscribe')
   @HttpCode(204)
-  async subscribe(@Body() body: { endpoint?: string; keys?: { p256dh?: string; auth?: string } }) {
+  async subscribe(@Body() body: { endpoint?: string; keys?: { p256dh?: string; auth?: string }; bodies?: string[] | string }) {
     const parsed = pushBody(body);
     if (!parsed) throw new BadRequestException('That subscription was not usable');
-    await this.push.subscribe(parsed.endpoint, parsed.p256dh, parsed.auth);
+    const bodies = body.bodies === undefined ? undefined : (Array.isArray(body.bodies) ? body.bodies : [body.bodies]).map(String);
+    await this.push.subscribe(parsed.endpoint, parsed.p256dh, parsed.auth, bodies);
   }
 
   @Post('push/unsubscribe')

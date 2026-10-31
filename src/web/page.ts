@@ -217,9 +217,20 @@ a.hit:hover h2{color:var(--teal)}
 .app-card{margin:8px 0 0;padding:36px 0 4px;border-top:1px solid var(--line)}
 .app-card h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
 .app-card > p{font:400 16px/1.55 var(--sans);color:var(--text-2);margin:0}
-.app-card .actions{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:280px}
+.app-card .actions{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:320px}
 .app-card button{margin:0;width:100%}
+.app-card button.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-2)}
+.app-card fieldset{margin-top:16px}
 .app-card .hint{margin-top:12px}
+.ask{border:0;padding:0;background:transparent;max-width:calc(100vw - 28px)}
+.ask::backdrop{background:rgba(6,8,11,.62)}
+.ask .sheet{background:var(--card);color:var(--text);border:1px solid var(--line-2);border-radius:20px;padding:22px 20px 18px;width:min(420px,calc(100vw - 28px));box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.ask h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
+.ask p{font:400 15.5px/1.5 var(--sans);color:var(--text-2);margin:0}
+.ask fieldset{margin-top:16px}
+.ask .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.ask button{margin:0}
+.ask button.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-2)}
 
 /* Footer: the note, then the links the bottom bar doesn't cover. */
 footer.site{position:relative;margin-top:56px;border-top:1px solid var(--line);padding:28px 0 8px;font:400 15px/1.6 var(--sans);color:var(--text-2)}
@@ -351,15 +362,48 @@ const GA_TAG = `<!-- Google tag (gtag.js) -->
 /** Full document: the page name, its main element, the footer, and the bottom icon bar. */
 const APP_HEAD = `<link rel="manifest" href="/manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Recaps"><link rel="apple-touch-icon" href="/icon-192.png">`;
 
-/** Registers the app and, on the home page, the install and notification buttons. */
+/** The meetings a phone can opt into. "Other" is a leftover bucket, not a choice. */
+function notifyChoices(): string {
+  return BODIES.filter((b) => b.name !== 'Other')
+    .map((b) => `<label><input class="app-body" type="checkbox" value="${esc(b.name)}" checked>${esc(b.name)}</label>`)
+    .join('');
+}
+
+/** Asks once, on any public page, whether this phone wants a buzz and for which meetings. */
+function askDialog(): string {
+  return `<dialog class="ask" id="app-ask" aria-labelledby="app-ask-title"><div class="sheet">
+<h2 id="app-ask-title">Want a buzz when a meeting is recapped?</h2>
+<p>Pick the meetings. You can change this anytime.</p>
+<fieldset><legend>Which meetings?</legend><div class="chips">${notifyChoices()}</div></fieldset>
+<p class="hint" id="app-ask-note"></p>
+<div class="actions"><button type="button" id="app-ask-yes">Allow notifications</button><button type="button" id="app-ask-no" class="ghost">Not now</button></div>
+</div></dialog>`;
+}
+
+/** Registers the app, prompts for notifications, and saves which meetings this phone wants. */
 const APP_JS = `<script>(function(){
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
-var installBtn = document.getElementById('app-install');
 var notifyBtn = document.getElementById('app-notify');
+var offBtn = document.getElementById('app-off');
 var note = document.getElementById('app-note');
-if (!installBtn || !notifyBtn) return;
-var installEvt = null;
-function say(t) { if (note) note.textContent = t; }
+var ask = document.getElementById('app-ask');
+var installBtn = document.getElementById('app-install');
+var KEY = 'kgb-notify';
+function say(t) { if (note) note.textContent = t; var n = document.getElementById('app-ask-note'); if (n && ask && ask.open) n.textContent = t; }
+function pref() { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } }
+function savePref(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
+function boxes(root) { return Array.prototype.slice.call((root || document).querySelectorAll('input.app-body')); }
+function apply(p) {
+  var names = p.bodies;
+  boxes().forEach(function(el) { el.checked = !names || !names.length || names.indexOf(el.value) !== -1; });
+}
+function picked(root) {
+  var all = boxes(root);
+  if (!all.length) return [];
+  var on = all.filter(function(el) { return el.checked; }).map(function(el) { return el.value; });
+  if (!on.length) return null;
+  return on.length === all.length ? [] : on;
+}
 function b64url(s) {
   var pad = '='.repeat((4 - s.length % 4) % 4);
   var b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
@@ -367,69 +411,118 @@ function b64url(s) {
   for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
   return a;
 }
-window.addEventListener('beforeinstallprompt', function(e) {
-  e.preventDefault();
-  installEvt = e;
-  installBtn.hidden = false;
-});
-installBtn.addEventListener('click', function() {
-  if (!installEvt) return;
-  installEvt.prompt();
-  installEvt.userChoice.then(function() { installEvt = null; installBtn.hidden = true; });
-});
+function closeAsk() { if (ask && ask.open) ask.close(); }
+function showManaging() {
+  if (notifyBtn) { notifyBtn.hidden = false; notifyBtn.textContent = 'Save choices'; }
+  if (offBtn) offBtn.hidden = false;
+  var names = pref().bodies;
+  say(names && names.length ? 'This phone buzzes for ' + names.join(', ') + '.' : 'This phone buzzes for every meeting.');
+}
+function showReady() {
+  if (notifyBtn) { notifyBtn.hidden = false; notifyBtn.textContent = 'Allow notifications'; }
+  if (offBtn) offBtn.hidden = true;
+}
+apply(pref());
+var installEvt = null;
+if (installBtn) {
+  window.addEventListener('beforeinstallprompt', function(e) {
+    e.preventDefault();
+    installEvt = e;
+    installBtn.hidden = false;
+  });
+  installBtn.addEventListener('click', function() {
+    if (!installEvt) return;
+    installEvt.prompt();
+    installEvt.userChoice.then(function() { installEvt = null; installBtn.hidden = true; });
+  });
+}
 var ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
 var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+if (ask) {
+  ask.addEventListener('cancel', function() { var p = pref(); p.asked = 'later'; savePref(p); });
+  var no = document.getElementById('app-ask-no');
+  if (no) no.addEventListener('click', function() { var p = pref(); p.asked = 'later'; savePref(p); closeAsk(); });
+}
 if (ios && !standalone) {
-  say('On iPhone, tap Share, then Add to Home Screen. Open that icon, then turn on notifications.');
+  var choose = document.getElementById('app-choose');
+  if (choose) choose.hidden = true;
+  if (notifyBtn) notifyBtn.hidden = true;
+  if (offBtn) offBtn.hidden = true;
+  say('On iPhone, tap Share, then Add to Home Screen. Open that icon, then pick which meetings can buzz.');
+  if (ask && pref().asked !== 'later' && pref().asked !== 'on') {
+    var lead = ask.querySelector('h2');
+    var copy = ask.querySelector('p');
+    if (lead) lead.textContent = 'Add Recaps to your home screen';
+    if (copy) copy.textContent = 'On iPhone, notifications start there. Tap Share, then Add to Home Screen. Open the icon and pick which meetings can buzz.';
+    var yesIos = document.getElementById('app-ask-yes');
+    if (yesIos) yesIos.hidden = true;
+    if (no) no.textContent = 'OK';
+    setTimeout(function() { try { ask.showModal(); } catch (e) {} }, 700);
+  }
   return;
+}
+function post(sub, bodies) {
+  var payload = sub.toJSON ? sub.toJSON() : { endpoint: sub.endpoint, keys: sub.keys };
+  payload.bodies = bodies;
+  return fetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(function(r) {
+    if (!r.ok) throw new Error('save');
+    var p = pref(); p.asked = 'on'; p.bodies = bodies; savePref(p); apply(p);
+    closeAsk();
+    showManaging();
+  });
+}
+function turnOn(root) {
+  var bodies = picked(root);
+  if (bodies === null) { say('Pick at least one meeting.'); return; }
+  if (!('Notification' in window) || !('PushManager' in window)) { say('This browser cannot send notifications yet.'); return; }
+  Notification.requestPermission().then(function(perm) {
+    if (perm !== 'granted') { say('Notifications stay off until you allow them.'); closeAsk(); return; }
+    return fetch('/push/vapid').then(function(r) { if (!r.ok) throw new Error('key'); return r.json(); }).then(function(key) {
+      return navigator.serviceWorker.ready.then(function(reg) {
+        return reg.pushManager.getSubscription().then(function(existing) {
+          if (existing) return existing;
+          return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64url(key.publicKey) });
+        });
+      });
+    }).then(function(sub) { return post(sub, bodies); });
+  }).catch(function() { say('That did not stick. Try again in a minute.'); });
+}
+if (ask) {
+  var yes = document.getElementById('app-ask-yes');
+  if (yes) yes.addEventListener('click', function() { turnOn(ask); });
 }
 if (!('Notification' in window) || !('PushManager' in window)) {
   say('Use your browser menu to add this to your home screen, then open it and allow notifications.');
   return;
 }
-function showOff() {
-  notifyBtn.hidden = false;
-  notifyBtn.textContent = 'Turn off notifications';
-  notifyBtn.setAttribute('data-off', '1');
-  say('This phone will buzz when a recap is published.');
-}
-function showOn() {
-  notifyBtn.hidden = false;
-  notifyBtn.textContent = 'Turn on notifications';
-  notifyBtn.removeAttribute('data-off');
-}
 if (Notification.permission === 'denied') {
   say('Notifications are blocked. You can allow them in your phone settings.');
   return;
 }
+if (notifyBtn) notifyBtn.addEventListener('click', function() { turnOn(document.getElementById('app') || document); });
+if (offBtn) offBtn.addEventListener('click', function() {
+  navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
+    if (!sub) return;
+    var endpoint = sub.endpoint;
+    return sub.unsubscribe().then(function() {
+      return fetch('/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: endpoint }) });
+    });
+  }).then(function() {
+    var p = pref(); p.asked = 'later'; p.bodies = []; savePref(p); apply(p);
+    showReady();
+    say('Notifications are off on this phone.');
+  }).catch(function() { say('That did not stick. Try again in a minute.'); });
+});
+function maybeAsk() {
+  if (!ask || pref().asked === 'later' || pref().asked === 'on') return;
+  if (Notification.permission !== 'default') return;
+  setTimeout(function() { try { ask.showModal(); } catch (e) {} }, 700);
+}
 navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
-  if (sub) showOff(); else showOn();
-});
-notifyBtn.addEventListener('click', function() {
-  if (notifyBtn.getAttribute('data-off')) {
-    navigator.serviceWorker.ready.then(function(reg) { return reg.pushManager.getSubscription(); }).then(function(sub) {
-      if (!sub) return;
-      var endpoint = sub.endpoint;
-      return sub.unsubscribe().then(function() {
-        return fetch('/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: endpoint }) });
-      });
-    }).then(function() { showOn(); say('Notifications are off on this phone.'); }).catch(function() { say('That did not stick. Try again in a minute.'); });
-    return;
-  }
-  Notification.requestPermission().then(function(perm) {
-    if (perm !== 'granted') { say('Notifications stay off until you allow them.'); return; }
-    fetch('/push/vapid').then(function(r) { if (!r.ok) throw new Error('key'); return r.json(); }).then(function(key) {
-      return navigator.serviceWorker.ready.then(function(reg) {
-        return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64url(key.publicKey) });
-      });
-    }).then(function(sub) {
-      return fetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub) });
-    }).then(function(r) {
-      if (!r.ok) throw new Error('save');
-      showOff();
-    }).catch(function() { say('That did not stick. Try again in a minute.'); });
-  });
-});
+  if (sub) { var p = pref(); p.asked = 'on'; savePref(p); showManaging(); return; }
+  showReady();
+  maybeAsk();
+}).catch(function() { showReady(); maybeAsk(); });
 })()</script>`;
 
 function shell(title: string, main: string, opts: { compact?: boolean; seo?: Seo; css?: string; bodyClass?: string } = {}): string {
@@ -441,6 +534,7 @@ ${seoTags(title, opts.seo ?? {})}
 ${main}
 ${footer()}
 ${desk ? '' : tabbar()}
+${desk ? '' : askDialog()}
 ${SHARE_JS}
 ${desk ? '' : TAB_JS}
 ${desk ? '' : APP_JS}
@@ -924,11 +1018,15 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
 <section class="app-card" id="app">
 <h2>On your phone</h2>
 <p>Add this to your home screen. It can buzz when a recap is published.</p>
+<div id="app-choose">
+<fieldset><legend>Which meetings should buzz?</legend><div class="chips">${notifyChoices()}</div></fieldset>
+</div>
 <div class="actions">
 <button type="button" id="app-install" hidden>Add to home screen</button>
-<button type="button" id="app-notify" hidden>Turn on notifications</button>
+<button type="button" id="app-notify">Allow notifications</button>
+<button type="button" id="app-off" class="ghost" hidden>Turn off</button>
 </div>
-<p class="hint" id="app-note">On iPhone, tap Share, then Add to Home Screen. On Android, choose Install app from the browser menu. Then allow notifications.</p>
+<p class="hint" id="app-note">On iPhone, tap Share, then Add to Home Screen. On Android, choose Install app from the browser menu. Then pick which meetings can buzz.</p>
 </section>
 </main>`,
     {

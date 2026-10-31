@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { normalizeDigest } from '../analysis/analysis.service';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
-import { slugify } from '../util';
+import { BODIES, slugify } from '../util';
 import * as webpush from 'web-push';
 
 const KEY_ID = 'default';
@@ -35,14 +35,16 @@ export class PushService {
     return (await this.keys()).publicKey;
   }
 
-  /** Saves a browser that asked for notifications. The same phone updating its keys replaces the old row. */
-  async subscribe(endpoint: string, p256dh: string, auth: string): Promise<void> {
+  /** Saves a browser that asked for notifications. The same phone updating its keys replaces the old row. An empty list means every meeting. */
+  async subscribe(endpoint: string, p256dh: string, auth: string, bodies?: string[]): Promise<void> {
+    const data: { p256dh: string; auth: string; bodies?: string[] } = { p256dh, auth };
+    if (bodies !== undefined) data.bodies = cleanBodies(bodies);
     const existing = await this.prisma.pushSubscription.findFirst({ where: { endpoint }, select: { id: true } });
     if (existing) {
-      await this.prisma.pushSubscription.update({ where: { id: existing.id }, data: { p256dh, auth } });
+      await this.prisma.pushSubscription.update({ where: { id: existing.id }, data });
       return;
     }
-    await this.prisma.pushSubscription.create({ data: { endpoint, p256dh, auth } });
+    await this.prisma.pushSubscription.create({ data: { endpoint, p256dh, auth, bodies: data.bodies ?? [] } });
   }
 
   async unsubscribe(endpoint: string): Promise<void> {
@@ -62,7 +64,9 @@ export class PushService {
         return;
       }
       const notice = noticeFor(meeting, meeting.analysis.data, base);
-      const subs = await this.prisma.pushSubscription.findMany();
+      const subs = (await this.prisma.pushSubscription.findMany()).filter(
+        (s) => s.bodies.length === 0 || s.bodies.includes(meeting.body),
+      );
       if (!subs.length) return;
       const keys = await this.keys();
       webpush.setVapidDetails(this.subject(), keys.publicKey, keys.privateKey);
@@ -118,4 +122,11 @@ export class PushService {
       }
     }
   }
+}
+
+const BODY_NAMES = new Set(BODIES.map((b) => b.name));
+
+/** Drops anything that is not a real meeting body. An empty result means every meeting. */
+function cleanBodies(bodies: string[]): string[] {
+  return [...new Set(bodies.map(String).filter((b) => BODY_NAMES.has(b)))];
 }
