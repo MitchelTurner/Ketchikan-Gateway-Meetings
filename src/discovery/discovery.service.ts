@@ -5,7 +5,7 @@ import { config } from '../config';
 import { MediaService, VideoMeta } from '../media/media.service';
 import { PrismaService } from '../prisma.service';
 import { Q_PROCESS } from '../queues';
-import { detectBody, parseDateFromText } from '../util';
+import { CITY_FALLBACK_BODY, detectBody, parseDateFromText } from '../util';
 import {
   detectVideos,
   granicusPublisherUrls,
@@ -13,8 +13,14 @@ import {
   listEmbeds,
   meetingTitle,
   parseGranicusArchive,
+  parseYoutubeChannelVideos,
+  parseYoutubeWatchPage,
   VideoRef,
 } from './video-detect';
+
+// YouTube serves a shell page to the identifying scraper UA. A browser UA gets the video list.
+const YOUTUBE_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 @Injectable()
 export class DiscoveryService {
@@ -99,12 +105,26 @@ export class DiscoveryService {
   }
 
   async discover(): Promise<{ found: number; added: number; queued: number }> {
-    const refs = await this.findVideos();
+    const found: { ref: VideoRef; fallbackBody: string }[] = [];
+    const seen = new Set<string>();
+    const add = (ref: VideoRef, fallbackBody: string) => {
+      if (seen.has(ref.url)) return;
+      seen.add(ref.url);
+      found.push({ ref, fallbackBody });
+    };
+    try {
+      for (const ref of await this.findVideos()) add(ref, 'Other');
+    } catch (err) {
+      this.log.warn(`Borough archive failed: ${(err as Error).message.split('\n')[0]}`);
+    }
+    for (const ref of await this.findCityVideos()) add(ref, CITY_FALLBACK_BODY);
+
     let added = 0;
     let queued = 0;
     const since = config.processSince;
 
-    for (const ref of refs) {
+    for (const item of found) {
+      const ref = item.ref;
       const exists = await this.prisma.meeting.findUnique({ where: { sourceUrl: ref.url }, select: { id: true } });
       if (exists) continue;
 
@@ -120,11 +140,33 @@ export class DiscoveryService {
         }
         // A stream that's live or scheduled isn't a finished recording yet; catch it next run.
         if (meta.liveStatus === 'is_live' || meta.liveStatus === 'is_upcoming') continue;
+        if (!meta.date && ref.platform === 'youtube') {
+          try {
+            const page = parseYoutubeWatchPage(await this.fetchYoutube(ref.url));
+            const published = parseDateFromText(page.dateText);
+            if (published || page.title || page.durationSec) {
+              meta = {
+                ...meta,
+                date: meta.date ?? published ?? undefined,
+                title: meta.title || page.title,
+                durationSec: meta.durationSec ?? page.durationSec,
+              };
+            }
+          } catch (err) {
+            this.log.warn(`YouTube page failed for ${ref.url}: ${(err as Error).message.split('\n')[0]}`);
+          }
+        }
       }
 
       const title = meetingTitle(meta.title, ref.label, ref.url);
       // Titles usually carry the actual meeting date; upload date can lag a day or more.
       const meetingDate = parseDateFromText(title) ?? labelDate ?? meta.date ?? null;
+      // A city upload with no date yet is left for the next check, instead of
+      // being stored as SKIPPED forever.
+      if (!meetingDate && ref.platform === 'youtube') {
+        this.log.warn(`No date for ${ref.url}; will try again next check`);
+        continue;
+      }
       const skip = !meetingDate || meetingDate < since;
 
       const m = await this.prisma.meeting.create({
@@ -132,7 +174,7 @@ export class DiscoveryService {
           sourceUrl: ref.url,
           platform: ref.platform,
           title,
-          body: detectBody(title),
+          body: detectBody(title, item.fallbackBody),
           meetingDate,
           durationSec: meta.durationSec ?? ref.durationSec,
           status: skip ? 'SKIPPED' : 'DISCOVERED',
@@ -145,8 +187,50 @@ export class DiscoveryService {
       }
     }
     const promoted = await this.promoteSkipped();
-    this.log.log(`Discovery: ${refs.length} videos on page, ${added} new, ${queued} queued, ${promoted} older meetings now in the window`);
-    return { found: refs.length, added, queued: queued + promoted };
+    this.log.log(`Discovery: ${found.length} videos, ${added} new, ${queued} queued, ${promoted} older meetings now in the window`);
+    return { found: found.length, added, queued: queued + promoted };
+  }
+
+  /** City of Ketchikan uploads. yt-dlp when it can list the channel, and the public videos page either way. */
+  private async findCityVideos(): Promise<VideoRef[]> {
+    const url = config.cityYoutubeUrl.trim();
+    if (!url) return [];
+    const out = new Map<string, VideoRef>();
+    const add = (list: VideoRef[]) => {
+      for (const ref of list) {
+        if (ref.platform !== 'youtube') continue;
+        const existing = out.get(ref.url);
+        if (!existing) out.set(ref.url, ref);
+        else if (!existing.label && ref.label) existing.label = ref.label;
+      }
+    };
+    try {
+      add(await this.media.expandList(url));
+    } catch (err) {
+      this.log.warn(`City YouTube list failed: ${(err as Error).message.split('\n')[0]}`);
+    }
+    try {
+      const html = await this.fetchYoutube(this.cityListingPage(url));
+      add(parseYoutubeChannelVideos(html).slice(0, config.channelListLimit));
+    } catch (err) {
+      this.log.warn(`City channel page failed: ${(err as Error).message.split('\n')[0]}`);
+    }
+    this.log.log(`City of Ketchikan: ${out.size} recent videos`);
+    return [...out.values()];
+  }
+
+  private cityListingPage(url: string): string {
+    const bare = url.replace(/\/+$/, '');
+    if (/\/(videos|streams|shorts)$/.test(bare) || bare.includes('/playlist?') || bare.includes('watch?')) return bare;
+    return `${bare}/videos`;
+  }
+
+  private async fetchYoutube(url: string): Promise<string> {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': YOUTUBE_UA, 'Accept-Language': 'en-US,en;q=0.9', Accept: 'text/html' },
+    });
+    if (!res.ok) throw new Error(`${url} returned ${res.status}`);
+    return res.text();
   }
 
   /**

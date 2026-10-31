@@ -21,11 +21,11 @@ export interface MeetingContext {
   checked?: { label: string; url: string }[];
 }
 
-const SYSTEM = `You research a Ketchikan Gateway Borough public meeting so that an automated transcript of it can be checked and put in context.
+const SYSTEM = `You research a Ketchikan public meeting (Gateway Borough or City of Ketchikan) so that an automated transcript of it can be checked and put in context.
 
 Use web search and web fetch. Look for:
-1. The members of the body that met (Assembly, Planning Commission, etc.), the Mayor, Borough Manager, Borough Clerk, Borough Attorney and department heads, as of the meeting date (the meeting may be years old; use the minutes, agenda or coverage from that time, not today's roster), with names spelled exactly as the Borough publishes them. Prefer kgbak.us.
-2. The agenda for this meeting: item titles and ordinance/resolution numbers. The Borough posts agendas on kgbak.us and ketchikan.granicus.com (AgendaViewer.php).
+1. The members of the body that met (Assembly, City Council, Planning Commission, Port and Harbors, a city board, and so on), and the mayor, manager, clerk and attorney, as of the meeting date (the meeting may be years old; use the minutes, agenda or coverage from that time, not today's roster), with names spelled exactly as the government publishes them. Borough meetings: prefer kgbak.us. City meetings: prefer ketchikan.gov and ktn-ak.us.
+2. The agenda for this meeting: item titles and ordinance/resolution numbers. The Borough posts agendas on kgbak.us and ketchikan.granicus.com (AgendaViewer.php). The City posts them on ketchikan.gov.
 3. News coverage of this meeting and of the issues on its agenda: previews before it and reports after it, from Ketchikan Daily News, KRBD, Alaska Public Media, Alaska Beacon, Anchorage Daily News and similar outlets. Only include an article if it is about this meeting or an item on its agenda.
 
 Report only what your sources say. Never invent a name, a URL, a date or an article. If you cannot find something, leave that list empty.
@@ -61,6 +61,7 @@ export class ResearchService {
       `Video: ${meeting.sourceUrl}`,
       agendaUrl ? `Agenda (may be empty): ${agendaUrl}` : '',
       `Borough website: https://www.kgbak.us/`,
+      `City of Ketchikan website: https://www.ketchikan.gov/`,
     ]
       .filter(Boolean)
       .join('\n');

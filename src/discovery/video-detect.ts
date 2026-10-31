@@ -222,3 +222,147 @@ export function classify(u: URL): Omit<VideoRef, 'label'> | null {
   }
   return null;
 }
+
+const YT_ID = /^[\w-]{11}$/;
+
+/** Recent uploads listed on a YouTube channel /videos page (newest first). */
+export function parseYoutubeChannelVideos(html: string): VideoRef[] {
+  const marker = html.search(/ytInitialData\s*=\s*\{/);
+  if (marker < 0) return [];
+  const brace = html.indexOf('{', marker);
+  const json = sliceJson(html, brace);
+  if (!json) return [];
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  const out: VideoRef[] = [];
+  const seen = new Set<string>();
+  const add = (id: string, title?: string, durationSec?: number) => {
+    if (!YT_ID.test(id) || seen.has(id)) return;
+    seen.add(id);
+    const label = title?.replace(/\s+/g, ' ').trim();
+    out.push({
+      url: `https://www.youtube.com/watch?v=${id}`,
+      platform: 'youtube',
+      label: label || undefined,
+      durationSec,
+    });
+  };
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const v of node) walk(v);
+      return;
+    }
+    const rec = node as Record<string, unknown>;
+    const lock = rec.lockupViewModel;
+    if (lock && typeof lock === 'object') {
+      const row = lock as Record<string, unknown>;
+      if (typeof row.contentId === 'string') add(row.contentId, lockupTitle(row), lockupDuration(row));
+    }
+    const vr = rec.videoRenderer ?? rec.gridVideoRenderer;
+    if (vr && typeof vr === 'object') {
+      const row = vr as Record<string, unknown>;
+      if (typeof row.videoId === 'string') add(row.videoId, textContent(row.title));
+    }
+    for (const v of Object.values(rec)) walk(v);
+  };
+  walk(data);
+  return out;
+}
+
+/** Upload date printed on a watch page, used when the title has no meeting date. */
+export function parseYoutubeWatchPage(html: string): { title?: string; dateText?: string; durationSec?: number } {
+  const dateText = html.match(/"publishDate"\s*:\s*\{\s*"simpleText"\s*:\s*"([^"]+)"/)?.[1];
+  const length = html.match(/"lengthSeconds"\s*:\s*"(\d+)"/)?.[1];
+  const rawTitle = html.match(/<meta\s+name="title"\s+content="([^"]*)"/i)?.[1]?.trim();
+  const title = rawTitle && rawTitle !== '- YouTube' && !/^youtube$/i.test(rawTitle) ? decodeBasic(rawTitle) : undefined;
+  return {
+    title,
+    dateText,
+    durationSec: length ? Number(length) : undefined,
+  };
+}
+
+/** "49:00" or "3:43:00" from the thumbnail badge. */
+function lockupDuration(lock: Record<string, unknown>): number | undefined {
+  let found: number | undefined;
+  const walk = (node: unknown) => {
+    if (found || !node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const v of node) walk(v);
+      return;
+    }
+    const rec = node as Record<string, unknown>;
+    const badge = rec.thumbnailBadgeViewModel;
+    if (badge && typeof badge === 'object' && typeof (badge as { text?: unknown }).text === 'string') {
+      const text = (badge as { text: string }).text;
+      if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(text)) {
+        found = clockToSec(text);
+        return;
+      }
+    }
+    for (const v of Object.values(rec)) walk(v);
+  };
+  walk(lock);
+  return found;
+}
+
+function clockToSec(text: string): number {
+  const parts = text.split(':').map((n) => Number(n));
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return parts[0] * 60 + parts[1];
+}
+
+function lockupTitle(lock: Record<string, unknown>): string | undefined {
+  const metadata = lock.metadata;
+  if (!metadata || typeof metadata !== 'object') return;
+  const view = (metadata as Record<string, unknown>).lockupMetadataViewModel;
+  if (!view || typeof view !== 'object') return;
+  return textContent((view as Record<string, unknown>).title);
+}
+
+function textContent(v: unknown): string | undefined {
+  if (!v || typeof v !== 'object') return;
+  const o = v as Record<string, unknown>;
+  if (typeof o.content === 'string') return o.content;
+  if (typeof o.simpleText === 'string') return o.simpleText;
+  if (Array.isArray(o.runs)) {
+    const text = o.runs
+      .map((r) => (r && typeof r === 'object' && typeof (r as { text?: unknown }).text === 'string' ? (r as { text: string }).text : ''))
+      .join('');
+    return text || undefined;
+  }
+  return;
+}
+
+function decodeBasic(s: string): string {
+  return s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
+/** Object starting at `start` (a `{`), respecting strings. */
+function sliceJson(s: string, start: number): string | null {
+  if (s[start] !== '{') return null;
+  let depth = 0;
+  let inStr = false;
+  let escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+  return null;
+}

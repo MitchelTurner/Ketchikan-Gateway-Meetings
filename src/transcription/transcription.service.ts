@@ -74,7 +74,7 @@ export class TranscriptionService {
   /** OpenAI Whisper: 25 MB upload cap, so audio is sent in 20-minute chunks. No speaker labels. */
   private async openai(audioPath: string, vocabulary: string[]): Promise<Segment[]> {
     // Whisper reads only the last ~224 tokens of the prompt.
-    const prompt = `Ketchikan Gateway Borough meeting. Assembly, Planning Commission, Saxman, Gravina, Revilla, Ward Cove, Tongass. ${vocabulary.join(', ')}`.slice(0, 800);
+    const prompt = `Ketchikan Gateway Borough or City of Ketchikan meeting. Assembly, City Council, Planning Commission, Port and Harbors, School Board, Saxman, Gravina, Revilla, Ward Cove, Tongass. ${vocabulary.join(', ')}`.slice(0, 800);
     const chunks = await this.media.splitAudio(audioPath, 20 * 60);
     const all: Segment[] = [];
     for (const { file, offsetSec } of chunks) {

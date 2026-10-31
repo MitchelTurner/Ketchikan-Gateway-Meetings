@@ -3,7 +3,7 @@ import { sourceLabel, timestampUrl } from '../email/render';
 import { MeetingDigest } from '../analysis/analysis.service';
 import type { DeepDiveArticle } from '../topics/deep-dive.service';
 import { BOROUGH_POPULATION, FOUNDING_READERS } from '../referrals';
-import { BODIES, esc, formatDate, hms, meetingParts, shortDate, slugify } from '../util';
+import { BODIES, esc, formatDate, hms, isCityBody, meetingParts, shortDate, slugify } from '../util';
 
 export { slugify };
 
@@ -304,10 +304,11 @@ window.addEventListener('hashchange',mark);
 
 function footer(): string {
   return `<footer class="site"><div class="wrap">
-<p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough publication. Recaps are written with AI from the Borough's own recordings and reviewed before they're published.</p>
+<p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough or City of Ketchikan publication. Recaps are written with AI from the Borough's recordings and the City's YouTube videos, and reviewed before they're published.</p>
 <nav aria-label="About this site">
 <a href="/#how">How we report</a>
 <a href="${esc(config.archiveUrl)}">Borough archive</a>
+${config.cityYoutubeUrl ? `<a href="${esc(config.cityYoutubeUrl)}">City videos</a>` : ''}
 <a href="/#app">Get the app</a>
 <a href="/#subscribe">Get the recap</a>
 </nav>
@@ -623,7 +624,7 @@ export interface InviteKit {
 export function inviteKit(k: InviteKit): string {
   const next = k.badges.find((b) => k.count < b.at);
   const founding = k.readerNo !== null && k.readerNo <= k.foundingLimit;
-  const message = `I've been reading ${config.newsletterName}: plain-language recaps of every Ketchikan Assembly, School Board and Planning Commission meeting. It's free.`;
+  const message = `I've been reading ${config.newsletterName}: plain-language recaps of Ketchikan Assembly, School Board, Planning and City Council meetings. It's free.`;
   const ladder = [
     ...(founding ? [`<li class="badge founding on">${emblem('star', true)}<b>Founding Reader</b>Reader #${k.readerNo} of the first ${k.foundingLimit}</li>`] : []),
     ...k.badges.map((b) => {
@@ -792,7 +793,7 @@ export function adminMeetingsPage(rows: AdminMeetingRow[]): string {
   return adminPage(
     'Meetings',
     'meetings',
-    `<h1>Meetings</h1><p class="lede">Everything found in the Borough's video archive, newest first. A transcript link means that meeting has been transcribed.</p>${list}`,
+    `<h1>Meetings</h1><p class="lede">Everything found in the Borough archive and on the City of Ketchikan YouTube channel, newest first. A transcript link means that meeting has been transcribed.</p>${list}`,
   );
 }
 
@@ -971,9 +972,9 @@ export function workList(hits: WorkHit[]): string {
 }
 
 const METHOD = `<ol class="method">
-<li><b>Recorded</b>Every meeting the Borough posts to its video archive.</li>
+<li><b>Recorded</b>Every meeting the Borough posts to its video archive, and every meeting the City of Ketchikan posts on YouTube.</li>
 <li><b>Transcribed</b>Word for word, with each point linked to its moment in the video.</li>
-<li><b>Checked</b>Names and item numbers against the Borough's roster and agenda, with context from local news.</li>
+<li><b>Checked</b>Names and item numbers against the published roster and agenda, with context from local news.</li>
 <li><b>Reviewed</b>A person reads each recap before it's published or emailed.</li>
 </ol>
 <p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
@@ -987,9 +988,9 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
       ? { href: `/meetings/${draft.id}`, body: draft.body, date: draft.date, headline: draft.headline, dek: esc(describe(draft.summary, 260)), draft: true }
       : null;
   const more = recent.slice(1, 5);
-  const title = `${config.newsletterName}: Ketchikan Assembly, School Board and Planning Commission meetings in plain language`;
+  const title = `${config.newsletterName}: Ketchikan Assembly, School Board, Planning and City Council meetings in plain language`;
   const description =
-    'What the Ketchikan Gateway Borough Assembly, School Board and Planning Commission decided, debated and heard from residents, written in plain language and linked to the meeting video.';
+    'What Ketchikan\'s Assembly, School Board, Planning Commission and City Council decided, debated and heard, written in plain language and linked to the video.';
 
   const leadHtml = lead
     ? `<article class="lead"><div class="kicker">${esc(lead.body)}</div>
@@ -1008,7 +1009,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
     : `<p class="empty">Earlier recaps will collect here.</p>`;
 
   const docketIntro = archiveCount
-    ? `<p class="muted">${archiveCount.toLocaleString('en-US')} meetings on the Borough's video archive. Everything since ${esc(sinceLabel)} is transcribed, newest first.</p>`
+    ? `<p class="muted">${archiveCount.toLocaleString('en-US')} meetings on record, from the Borough archive and the City's YouTube channel. Everything since ${esc(sinceLabel)} is transcribed, newest first.</p>`
     : '<p class="muted">No meetings recorded yet. The archive is checked every few hours.</p>';
 
   return shell(
@@ -1020,7 +1021,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
     <h1>Every public meeting, in plain language.</h1>
     <p class="dek">What passed, what was debated, what residents said, and what comes next. Written from the official recording, checked against the agenda, and linked to the exact moment in the video.</p>
     ${weekSection(week)}
-    <p class="facts"><b>${archiveCount.toLocaleString('en-US')}</b> meetings on the record · Assembly, School Board and Planning · Free</p>
+    <p class="facts"><b>${archiveCount.toLocaleString('en-US')}</b> meetings on the record · Assembly, School Board, Planning and the City · Free</p>
   </div>
   <aside class="signup" id="subscribe">
     ${growth?.ref ? '<p class="invited">A neighbor invited you to read along.</p>' : ''}<h2>Get the recap</h2>
@@ -1193,7 +1194,7 @@ export function noteDetailPage(
   const caveats = [
     ...(Array.isArray(d.caveats) ? d.caveats.filter((c) => typeof c === 'string') : []),
     ...(fixes.length
-      ? [`Names corrected from the transcript using the Borough's published spelling: ${fixes.map((f) => `"${f.heard}" → ${f.corrected}`).join(', ')}.`]
+      ? [`Names corrected from the transcript using the published spelling: ${fixes.map((f) => `"${f.heard}" → ${f.corrected}`).join(', ')}.`]
       : []),
   ];
   const date = formatDate(meeting.meetingDate);
@@ -1211,7 +1212,7 @@ ${opts.banner ?? ''}<div class="kicker">${esc(placeBody(meeting.body))}</div>
 ${partsList(meeting.title, meeting.body)}
 <div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a></div>
 <div class="body">${sections}</div>
-<div class="notice"><strong>How this was made</strong>Written with AI from the Borough's recording and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
+<div class="notice"><strong>How this was made</strong>Written with AI from ${isCityBody(meeting.body) ? "the City of Ketchikan's recording" : "the Borough's recording"} and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
 ${opts.after ?? ''}
 ${!opts.draft && base ? `<p class="share-head">Share this recap</p>${shareButtons(base + canonical, d.headline, `${d.headline}: what happened at the ${placeBody(meeting.body)} meeting.`)}` : ''}
 ${!opts.draft && opts.growth ? signupCallout(opts.growth) : ''}

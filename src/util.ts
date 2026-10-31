@@ -21,16 +21,33 @@ export function verify(value: string, sig: string | undefined): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** Which public body a meeting belongs to, from its title. Edit to taste. */
+/**
+ * Which public body a meeting belongs to, from its title. First match wins.
+ * City patterns sit ahead of the catch-all. Port and Harbors is before
+ * City Committees because those titles also say "advisory board".
+ */
 export const BODIES: { name: string; pattern: RegExp }[] = [
   { name: 'Assembly', pattern: /assembly/i },
   { name: 'Planning Commission', pattern: /planning\s*(commission|&\s*zoning|and\s*zoning)|\bP\s*&\s*Z\b/i },
   { name: 'School Board', pattern: /school\s*board/i },
   { name: 'Service Area Boards', pattern: /service\s*area/i },
+  { name: 'City Council', pattern: /city\s*council/i },
+  { name: 'Port and Harbors', pattern: /port\s*(?:&|and\s+)?\s*harbou?rs/i },
+  { name: 'City Committees', pattern: /advisory\s*(?:board|committee)|ad\s*hoc\s*committee|grant\s*committee|cooperative\s*relations/i },
   { name: 'Other', pattern: /.*/ },
 ];
-export function detectBody(title: string): string {
-  return BODIES.find((b) => b.pattern.test(title))!.name;
+
+/** Body used for a City of Ketchikan video whose title names no specific board. */
+export const CITY_FALLBACK_BODY = 'City Committees';
+
+const CITY_BODY_NAMES = new Set(['City Council', 'Port and Harbors', 'City Committees']);
+
+export function isCityBody(name: string): boolean {
+  return CITY_BODY_NAMES.has(name);
+}
+
+export function detectBody(title: string, fallback = 'Other'): string {
+  return BODIES.find((b) => b.name !== 'Other' && b.pattern.test(title))?.name ?? fallback;
 }
 
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -97,8 +114,8 @@ export function meetingParts(title: string, body: string): string[] {
   t = t.replace(new RegExp(`^\\s*${name}\\b`, 'i'), ' ');
   return t
     .split(/,?\s*\bfollowed by\b\s*|\s+[-–—|:]\s+|^\s*[-–—|:]\s*|\s*[-–—|:]\s*$/i)
-    .map((s) => s.replace(/\s+/g, ' ').replace(/^[\s,–—:|-]+|[\s,–—:|-]+$/g, '').trim())
-    .filter((s) => s && s.toLowerCase() !== body.toLowerCase());
+    .map((s) => s.replace(/\s+/g, ' ').replace(/^[\s,–—:|-]+|[\s,–—:|-]+$/g, '').replace(/\s+of$/i, '').trim())
+    .filter((s) => s && s.toLowerCase() !== body.toLowerCase() && !/^(recurring\s+)?(quarterly\s+)?meeting$/i.test(s));
 }
 
 /** "assembly-approves-4m-harbor-bond" for readable, keyword-bearing URLs. */

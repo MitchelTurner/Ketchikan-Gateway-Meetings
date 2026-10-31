@@ -16,6 +16,15 @@ export const config = {
 
   // Source
   get archiveUrl() { return opt('ARCHIVE_URL', 'https://www.kgbak.us/434/Meeting-Video-Archive'); },
+  /**
+   * City of Ketchikan posts council and board meetings here.
+   * Set CITY_YOUTUBE_URL empty to skip them.
+   */
+  get cityYoutubeUrl() {
+    const v = process.env.CITY_YOUTUBE_URL;
+    if (v === undefined) return 'https://www.youtube.com/@cityofketchikan8631';
+    return v.trim();
+  },
   get userAgent() {
     return opt('SCRAPER_USER_AGENT', 'KGBMeetingDigest/0.1 (+contact: set SCRAPER_USER_AGENT)');
   },
@@ -56,7 +65,7 @@ export const config = {
   get researchModel() { return opt('RESEARCH_MODEL', this.anthropicModel); },
   /** Sites web search and fetch may use. Empty = the whole web. */
   get researchDomains(): string[] {
-    return list(opt('RESEARCH_DOMAINS', 'kgbak.us,granicus.com,ktn-ak.us,kgbsd.org,ketchikandailynews.com,krbd.org,alaskapublic.org,alaskabeacon.com,adn.com,akleg.gov'));
+    return list(opt('RESEARCH_DOMAINS', 'kgbak.us,granicus.com,ktn-ak.us,ketchikan.gov,kgbsd.org,ketchikandailynews.com,krbd.org,alaskapublic.org,alaskabeacon.com,adn.com,akleg.gov'));
   },
   /** "Name — Role; Name — Role". Spellings you want used even when the web disagrees. */
   get knownNames(): { name: string; role: string }[] {

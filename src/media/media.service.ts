@@ -114,6 +114,39 @@ export class MediaService {
     };
   }
 
+  /**
+   * English captions already on a YouTube video, hand-written or auto-generated.
+   * Returns the VTT text, or null when YouTube has none.
+   */
+  async youtubeCaptions(url: string): Promise<string | null> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'caps-'));
+    try {
+      await this.ytdlp(
+        [
+          '--skip-download',
+          '--write-subs',
+          '--write-auto-subs',
+          '--sub-langs', 'en.*',
+          '--sub-format', 'vtt',
+          '--convert-subs', 'vtt',
+          '--no-playlist',
+          '-o', path.join(dir, 'cap.%(ext)s'),
+          url,
+        ],
+        3 * 60_000,
+      );
+      const files = (await fs.readdir(dir)).filter((f) => f.endsWith('.vtt'));
+      let best = '';
+      for (const file of files) {
+        const text = await fs.readFile(path.join(dir, file), 'utf8');
+        if (text.length > best.length) best = text;
+      }
+      return best || null;
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }
+
   /** Downloads audio only, as small mono 16 kHz MP3 (~15 MB/hour). Returns the file path. */
   async downloadAudio(url: string, dir: string): Promise<string> {
     const playable = await this.resolvePlayable(url);

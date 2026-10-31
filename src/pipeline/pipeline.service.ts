@@ -16,6 +16,7 @@ import { Q_CONTROL, Q_EMAIL } from '../queues';
 import { MeetingContext, normalizeContext, ResearchService, vocabulary } from '../research/research.service';
 import { TopicsService } from '../topics/topics.service';
 import { Segment, TranscriptionService } from '../transcription/transcription.service';
+import { parseYoutubeVtt, usableCaptions } from '../transcription/youtube-vtt';
 import { PushService } from '../push/push.service';
 import { ensureRefCode, inviteUrl, referralCount } from '../referrals';
 import { esc, sign, slugify } from '../util';
@@ -64,23 +65,36 @@ export class PipelineService {
 
       let segments = meeting.transcript?.segments as Segment[] | undefined;
       if (!segments) {
-        const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'meeting-'));
-        try {
-          await this.setStatus(meetingId, 'DOWNLOADING');
-          const audio = await this.media.downloadAudio(meeting.sourceUrl, dir);
-          await this.setStatus(meetingId, 'TRANSCRIBING');
-          segments = await this.transcription.transcribe(audio, vocabulary(context));
-          if (!segments.length) throw new Error('Transcript came back empty');
+        const captions = await this.youtubeTranscript(meeting);
+        if (captions) {
+          segments = captions;
           await this.prisma.transcript.create({
             data: {
               meetingId,
-              provider: this.transcription.providerName,
+              provider: 'youtube',
               segments: segments as any,
               text: segments.map((s) => s.text).join(' '),
             },
           });
-        } finally {
-          await fs.rm(dir, { recursive: true, force: true });
+        } else {
+          const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'meeting-'));
+          try {
+            await this.setStatus(meetingId, 'DOWNLOADING');
+            const audio = await this.media.downloadAudio(meeting.sourceUrl, dir);
+            await this.setStatus(meetingId, 'TRANSCRIBING');
+            segments = await this.transcription.transcribe(audio, vocabulary(context));
+            if (!segments.length) throw new Error('Transcript came back empty');
+            await this.prisma.transcript.create({
+              data: {
+                meetingId,
+                provider: this.transcription.providerName,
+                segments: segments as any,
+                text: segments.map((s) => s.text).join(' '),
+              },
+            });
+          } finally {
+            await fs.rm(dir, { recursive: true, force: true });
+          }
         }
       }
 
@@ -127,6 +141,32 @@ export class PipelineService {
         data: { status: 'FAILED', error: (err as Error).message.slice(0, 2000) },
       });
       throw err;
+    }
+  }
+
+  /**
+   * YouTube already transcribes its own videos. Use that when the track is long
+   * enough to recap; otherwise fall through to the paid transcription.
+   */
+  private async youtubeTranscript(meeting: {
+    id: string;
+    platform: string;
+    sourceUrl: string;
+    durationSec: number | null;
+  }): Promise<Segment[] | null> {
+    if (meeting.platform !== 'youtube') return null;
+    try {
+      const vtt = await this.media.youtubeCaptions(meeting.sourceUrl);
+      const segments = vtt ? parseYoutubeVtt(vtt) : [];
+      if (!usableCaptions(segments, meeting.durationSec)) {
+        this.log.log(`${meeting.id}: YouTube captions missing or too short; transcribing the audio`);
+        return null;
+      }
+      this.log.log(`${meeting.id}: using YouTube's transcript (${segments.length} lines)`);
+      return segments;
+    } catch (err) {
+      this.log.warn(`${meeting.id}: YouTube captions unavailable: ${(err as Error).message.split('\n')[0]}`);
+      return null;
     }
   }
 
