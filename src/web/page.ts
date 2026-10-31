@@ -4,7 +4,8 @@ import { MeetingDigest } from '../analysis/analysis.service';
 import type { DeepDiveArticle } from '../topics/deep-dive.service';
 import { BOROUGH_POPULATION, FOUNDING_READERS } from '../referrals';
 import { BODIES, esc, formatDate, hms, isCityBody, meetingParts, shortDate, slugify } from '../util';
-import { readVote, reviewVotes, voteProse } from '../analysis/votes';
+import { reviewVotes, voteProse } from '../analysis/votes';
+import { boardVoters } from './board-members';
 import { topicSearchScript, topicTools } from './topic-search';
 
 export { slugify };
@@ -79,7 +80,8 @@ fieldset{border:0;padding:0;margin:20px 0 0}legend{font:500 13.5px/1.4 var(--san
 .chips button:hover{border-color:var(--teal);color:var(--text)}
 .chips button[aria-pressed="true"]{background:color-mix(in srgb,var(--teal) 16%,transparent);border-color:var(--teal);color:var(--text)}
 .chips button:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
-p.vote{display:inline-block;margin:0 0 8px;padding:2px 9px;border-radius:999px;font:600 12.5px/1.45 var(--mono);letter-spacing:.01em;color:var(--text);background:color-mix(in srgb,var(--teal) 18%,transparent)}
+p.who{margin:0 0 8px;font:400 13.5px/1.45 var(--sans);color:var(--muted)}
+p.who span{margin-right:6px;font:600 11px/1 var(--sans);letter-spacing:.04em;text-transform:uppercase;color:var(--text-2)}
 .coming{border-top:1px solid var(--line);margin-top:28px;padding-top:36px}
 .coming ul{list-style:none;margin:14px 0 0;padding:0}
 .coming li{padding:14px 0;border-bottom:1px solid var(--line)}
@@ -187,7 +189,7 @@ a.hit:hover{border-color:var(--line-2);background:var(--surface-2)}
 .hit .kicker{font-size:11.5px;margin-bottom:8px}
 .hit h2{font-size:22px;line-height:1.3;letter-spacing:-.02em;margin:0 0 8px}
 .hit p{margin:0;font:400 15px/1.6 var(--sans);color:var(--text-2)}
-.hit p.vote,.stack .item p.vote,.docket p.vote,.lead p.vote{margin:0 0 8px;font:600 12.5px/1.45 var(--mono);color:var(--text)}
+.hit p.who,.stack .item p.who,.docket p.who,.lead p.who,.article p.who{margin:0 0 8px;font:400 13.5px/1.45 var(--sans);color:var(--muted)}
 a.hit:hover h2{color:var(--teal)}
 .search{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:end;margin:8px 0 24px}
 .search label{margin:0 0 8px}.search button{margin:0;width:100%;padding:14px 22px}
@@ -914,37 +916,11 @@ export function weekSentence(headline: string): string {
   return /[.!?]$/.test(s) ? s : `${s}.`;
 }
 
-/** The vote a card should show: a count such as "Approved 7–0", or "Unanimous" when that is all the transcript gave. */
-export function cardVote(actions: { item?: string; outcome?: string; vote?: string }[] | undefined): string {
-  if (!actions?.length) return '';
-  const rows = actions.filter((a) => {
-    const vote = (a.vote ?? '').replace(/\s+/g, ' ').trim();
-    return vote && !/unclear|not stated|unknown|n\/a|^none$/i.test(vote);
-  });
-  if (!rows.length) return '';
-  // A 5–0 next to several 7–0s is a missed name, not the meeting's vote. Prefer a tally that matches the others.
-  const { notes } = reviewVotes(rows);
-  const sound = rows.filter((a, i) => {
-    const read = readVote(a.vote ?? '', a.outcome ?? '');
-    return Boolean(read.total) && !read.partial && !read.direction && !notes[i];
-  });
-  const pick = sound.find((a) => /\d/.test(a.vote ?? '')) ?? rows.find((a) => /\d/.test(a.vote ?? '')) ?? rows[0];
-  let vote = (pick.vote ?? '').replace(/\s*[-–—]\s*/g, '–').replace(/\s+/g, ' ').trim();
-  const outcome = (pick.outcome ?? '').replace(/\s+/g, ' ').trim();
-  const short = /^(approved|passed|adopted|failed|rejected|postponed|tabled)$/i.test(outcome)
-    ? outcome.charAt(0).toUpperCase() + outcome.slice(1).toLowerCase()
-    : '';
-  if (short && new RegExp(`^${short}\\b`, 'i').test(vote)) vote = vote.slice(short.length).replace(/^[\s,–-]+/, '').trim();
-  const bareCount = vote.match(/^unanimous\s*\(([^)]+)\)$/i);
-  if (bareCount && /^\d+\s*–\s*\d+$/.test(bareCount[1].trim())) vote = bareCount[1].trim();
-  let label: string;
-  if (/^unanimous\b/i.test(vote)) {
-    const rest = `unanimous${vote.slice(9)}`;
-    label = short ? `${short}, ${rest}` : rest.charAt(0).toUpperCase() + rest.slice(1);
-  } else {
-    label = short && vote ? `${short} ${vote}` : vote || short;
-  }
-  return label.length > 80 ? '' : label;
+/** Last names of the people who vote on this body. A meeting has several votes, so the card names the board instead of one tally. */
+function membersLine(body: string): string {
+  const names = boardVoters(body);
+  if (!names.length) return '';
+  return `<p class="who"><span>Members</span> ${esc(names.join(', '))}</p>`;
 }
 
 export interface ComingItem {
@@ -974,15 +950,13 @@ export interface NoteHit {
   date: string;
   headline: string;
   snippet: string;
-  /** "Approved 7–0", when the recap recorded a vote. */
-  vote: string;
 }
 
 export function hitList(hits: NoteHit[]): string {
   if (!hits.length) return '';
   return `<div class="hits">${hits
     .map(
-      (h) => `<a class="hit" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}${h.date ? ` <span class="meta" style="text-transform:none;letter-spacing:0;font-weight:500">· ${esc(h.date)}</span>` : ''}</div><h2>${esc(h.headline)}</h2>${h.vote ? `<p class="vote">${esc(h.vote)}</p>` : ''}<p>${h.snippet}</p></a>`,
+      (h) => `<a class="hit" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}${h.date ? ` <span class="meta" style="text-transform:none;letter-spacing:0;font-weight:500">· ${esc(h.date)}</span>` : ''}</div><h2>${esc(h.headline)}</h2>${membersLine(h.body)}<p>${h.snippet}</p></a>`,
     )
     .join('')}</div>`;
 }
@@ -1038,8 +1012,6 @@ export interface WorkHit {
   headline: string;
   /** First paragraph of the recap. */
   summary: string;
-  /** "Approved 7–0", once a recap recorded a vote. */
-  vote: string;
   /** Shown in the default docket. Older rows stay in the list for a body filter. */
   featured: boolean;
 }
@@ -1103,7 +1075,7 @@ export function workList(hits: WorkHit[]): string {
       const href = h.headline ? noteHref(h.id, h.headline) : `/meetings/${encodeURIComponent(h.id)}`;
       const kind = h.body === 'Other' ? 'Other' : h.body;
       return `<li data-body="${esc(h.body)}" data-home="${h.featured ? '1' : '0'}"${h.featured ? '' : ' hidden'}><a href="${esc(href)}"><div class="when">${docketDate(h.date)}</div>
-<div><h3>${esc(title)}</h3>${h.vote ? `<p class="vote">${esc(h.vote)}</p>` : ''}${parts.length ? `<ul class="parts">${parts.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>
+<div><h3>${esc(title)}</h3>${membersLine(h.body)}${parts.length ? `<ul class="parts">${parts.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>
 <div class="marks">${publicPill(h.status)}<span class="kind">${esc(kind)}</span></div></a></li>`;
     })
     .join('');
@@ -1123,9 +1095,9 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
   // Lead with the newest written recap; fall back to a docket headline so the page is never empty.
   const draft = work.find((w) => w.headline);
   const lead = recent[0]
-    ? { href: noteHref(recent[0].id, recent[0].headline), body: recent[0].body, date: recent[0].date, headline: recent[0].headline, dek: recent[0].snippet, vote: recent[0].vote, draft: false }
+    ? { href: noteHref(recent[0].id, recent[0].headline), body: recent[0].body, date: recent[0].date, headline: recent[0].headline, dek: recent[0].snippet, draft: false }
     : draft
-      ? { href: `/meetings/${draft.id}`, body: draft.body, date: draft.date, headline: draft.headline, dek: esc(describe(draft.summary, 260)), vote: draft.vote, draft: true }
+      ? { href: `/meetings/${draft.id}`, body: draft.body, date: draft.date, headline: draft.headline, dek: esc(describe(draft.summary, 260)), draft: true }
       : null;
   const more = recent.slice(1, 5);
   const title = `${config.newsletterName}: Ketchikan Assembly, School Board, Planning and City Council meetings in plain language`;
@@ -1135,7 +1107,7 @@ export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: num
   const leadHtml = lead
     ? `<article class="lead"><div class="kicker">${esc(lead.body)}</div>
 <h2><a href="${esc(lead.href)}">${esc(lead.headline)}</a></h2>
-${lead.vote ? `<p class="vote">${esc(lead.vote)}</p>` : ''}
+${membersLine(lead.body)}
 <p class="dek">${lead.dek}</p>
 <p class="meta">${esc(lead.date)}</p>
 <a class="more" href="${esc(lead.href)}">Read the recap →</a></article>`
@@ -1144,7 +1116,7 @@ ${lead.vote ? `<p class="vote">${esc(lead.vote)}</p>` : ''}
   const moreHtml = more.length
     ? `<div class="stack">${more
         .map(
-          (h) => `<a class="item" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}</div><h3>${esc(h.headline)}</h3>${h.vote ? `<p class="vote">${esc(h.vote)}</p>` : ''}<p class="meta">${esc(h.date)}</p></a>`,
+          (h) => `<a class="item" href="${esc(noteHref(h.id, h.headline))}"><div class="kicker">${esc(h.body)}</div><h3>${esc(h.headline)}</h3>${membersLine(h.body)}<p class="meta">${esc(h.date)}</p></a>`,
         )
         .join('')}</div>`
     : `<p class="empty">Earlier recaps will collect here.</p>`;
@@ -1284,6 +1256,7 @@ export function meetingPage(
     `<main class="wrap" style="max-width:720px"><article class="article">
 ${banner}<div class="kicker">${esc(meeting.body)}</div>
 <h1>${esc(placeBody(meeting.body))} meeting</h1>
+${membersLine(meeting.body)}
 ${partsList(meeting.title, meeting.body)}
 <div class="byline"><span>${esc(date || 'Date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a></div>
 ${transcript || '<p class="empty">No transcript yet.</p>'}
@@ -1351,6 +1324,7 @@ export function noteDetailPage(
     `<main class="wrap" style="max-width:720px"><article class="article">
 ${opts.banner ?? ''}<div class="kicker">${esc(placeBody(meeting.body))}</div>
 <h1>${esc(d.headline)}</h1>
+${membersLine(meeting.body)}
 ${partsList(meeting.title, meeting.body)}
 <div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a></div>
 <div class="body">${sections}</div>

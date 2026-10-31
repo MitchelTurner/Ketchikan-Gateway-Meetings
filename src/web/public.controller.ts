@@ -11,7 +11,7 @@ import {
   BADGES, badgeFor, communityGoal, confirmedReaders, ensureRefCode, FOUNDING_READERS, inviteUrl, readerNumber, REF_PATTERN, referralCount,
 } from '../referrals';
 import {
-  bodyCheckboxes, cardVote, ComingItem, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
+  bodyCheckboxes, ComingItem, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readCookie } from './stats.service';
@@ -263,7 +263,6 @@ export class PublicController {
         status: m.status,
         headline: digest?.headline ?? '',
         summary: digest?.summary.split(/\n\s*\n/)[0] ?? '',
-        vote: digest ? cardVote(digest.actions) : '',
       };
     });
     const featured = new Set(mapped.slice(0, 12).map((m) => m.id));
@@ -312,7 +311,6 @@ export class PublicController {
         date: shortDate(m.meetingDate),
         headline: digest.headline,
         snippet: snippet(query ? plain : digest.summary, query),
-        vote: cardVote(digest.actions),
       });
       if (hits.length >= limit) break;
     }
