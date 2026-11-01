@@ -9,7 +9,7 @@ import { readerCookie } from '../web/reader-cookie';
 import { AskPageModel, askPage, AskTurnView } from '../web/page';
 import { AskLimitError, AskService, AskUnavailableError } from './ask.service';
 import { ASK_PRICE_LABEL, capFor } from './ask-logic';
-import { BillingService } from './billing.service';
+import { BillingService, publicBillingError } from './billing.service';
 
 const FLASH: Record<string, string> = {
   link: 'Check your inbox. The link signs this browser in.',
@@ -35,8 +35,8 @@ export class AskController {
 
   @Get('ask')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async show(@Req() req: Request, @Query('done') done?: string, @Query('m') meetingId?: string) {
-    return askPage(await this.model(req, done, meetingId));
+  async show(@Req() req: Request, @Query('done') done?: string, @Query('m') meetingId?: string, @Query('why') why?: string) {
+    return askPage(await this.model(req, done, meetingId, why));
   }
 
   @Get('ask/in/:token')
@@ -70,24 +70,27 @@ export class AskController {
   @Post('ask/checkout')
   async checkout(@Req() req: Request, @Res() res: Response) {
     const reader = await this.reader(req);
-    if (!reader || !config.askBillingReady) return res.redirect(303, '/ask?done=pay-failed');
+    if (!reader) return res.redirect(303, '/ask');
+    if (!config.askBillingReady) return res.redirect(303, askPayFailed('Payments are not turned on.'));
     try {
       res.redirect(303, await this.billing.checkoutUrl(reader.id));
     } catch (err) {
-      this.log.warn(`Ask checkout failed: ${(err as Error).message}`);
-      res.redirect(303, '/ask?done=pay-failed');
+      this.log.warn(`Ask checkout failed: ${publicBillingError(err)}`);
+      res.redirect(303, askPayFailed(publicBillingError(err)));
     }
   }
 
   @Post('ask/portal')
   async portal(@Req() req: Request, @Res() res: Response) {
     const reader = await this.reader(req);
-    if (!reader?.stripeCustomerId || !config.askBillingReady) return res.redirect(303, '/ask?done=pay-failed');
+    if (!reader) return res.redirect(303, '/ask');
+    if (!config.askBillingReady) return res.redirect(303, askPayFailed('Payments are not turned on.'));
+    if (!reader.stripeCustomerId) return res.redirect(303, '/ask');
     try {
       res.redirect(303, await this.billing.portalUrl(reader.stripeCustomerId));
     } catch (err) {
-      this.log.warn(`Ask portal failed: ${(err as Error).message}`);
-      res.redirect(303, '/ask?done=pay-failed');
+      this.log.warn(`Ask portal failed: ${publicBillingError(err)}`);
+      res.redirect(303, askPayFailed(publicBillingError(err)));
     }
   }
 
@@ -126,7 +129,7 @@ export class AskController {
     return this.accounts.readerFrom(req);
   }
 
-  private async model(req: Request, done?: string, meetingId?: string): Promise<AskPageModel> {
+  private async model(req: Request, done?: string, meetingId?: string, why?: string): Promise<AskPageModel> {
     const reader = await this.reader(req);
     const pin = safeId(meetingId);
     const paid = reader?.askAccess === 'paid';
@@ -151,6 +154,8 @@ export class AskController {
       pinHeadline = typeof headline === 'string' ? headline : '';
     }
     const flashKey = done === 'pending' && paid ? 'paid' : done;
+    const detail = String(why ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    const base = flashKey ? FLASH[flashKey] : undefined;
     return {
       signedIn: Boolean(reader),
       paid,
@@ -162,9 +167,14 @@ export class AskController {
       turns,
       pinId: pin,
       pinHeadline,
-      flash: flashKey ? FLASH[flashKey] : undefined,
+      flash: detail && base ? `${base} ${detail}` : detail || base,
     };
   }
+}
+
+function askPayFailed(why: string): string {
+  const note = why.replace(/\s+/g, ' ').trim().slice(0, 240);
+  return note ? `/ask?done=pay-failed&why=${encodeURIComponent(note)}` : '/ask?done=pay-failed';
 }
 
 function safeId(value: unknown): string {

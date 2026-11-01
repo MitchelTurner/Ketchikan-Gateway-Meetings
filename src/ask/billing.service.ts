@@ -22,18 +22,32 @@ export class BillingService {
     const reader = await this.prisma.subscriber.findUnique({ where: { id: subscriberId } });
     if (!reader) throw new Error('No reader');
     if (reader.askAccess === 'paid' && reader.stripeCustomerId) return this.portalUrl(reader.stripeCustomerId);
-    const stripe = this.stripe();
     let customerId = reader.stripeCustomerId;
-    if (!customerId) {
-      const customer = await stripe.customers.create({ email: reader.email });
-      customerId = customer.id;
-      await this.prisma.subscriber.update({ where: { id: reader.id }, data: { stripeCustomerId: customerId } });
+    if (!customerId) customerId = await this.newCustomer(reader.id, reader.email);
+    try {
+      return await this.openCheckout(customerId, reader.id, back);
+    } catch (err) {
+      if (!missingCustomer(err)) throw err;
+      this.log.warn(`Stripe customer ${customerId} is gone. Creating another.`);
+      customerId = await this.newCustomer(reader.id, reader.email);
+      return this.openCheckout(customerId, reader.id, back);
     }
-    const session = await stripe.checkout.sessions.create({
+  }
+
+  private async newCustomer(subscriberId: string, email: string): Promise<string> {
+    const customer = await this.stripe().customers.create({ email });
+    await this.prisma.subscriber.update({ where: { id: subscriberId }, data: { stripeCustomerId: customer.id } });
+    return customer.id;
+  }
+
+  private async openCheckout(customerId: string, subscriberId: string, back: '/ask' | '/account'): Promise<string> {
+    const price = await this.priceId();
+    const session = await this.stripe().checkout.sessions.create({
       mode: 'subscription',
+      ui_mode: 'hosted_page',
       customer: customerId,
-      client_reference_id: reader.id,
-      line_items: [{ price: config.stripePriceId, quantity: 1 }],
+      client_reference_id: subscriberId,
+      line_items: [{ price, quantity: 1 }],
       success_url: `${config.publicBaseUrl}${back}?done=pending`,
       cancel_url: `${config.publicBaseUrl}${back}`,
       integration_identifier: INTEGRATION_ID,
@@ -42,45 +56,72 @@ export class BillingService {
     return session.url;
   }
 
-  /**
-   * Invoices, the card on file, and cancel-at-period-end. The configuration is
-   * created here so those switches are on without a Dashboard click. Hosted
-   * portal login stays off; readers sign in on this site.
-   */
+  /** A product id in STRIPE_PRICE_ID still works: use its monthly price. */
+  private async priceId(): Promise<string> {
+    const raw = config.stripePriceId;
+    if (!raw.startsWith('prod_')) return raw;
+    const prices = await this.stripe().prices.list({ product: raw, active: true, limit: 20 });
+    const monthly = prices.data.find((price) => price.recurring?.interval === 'month');
+    if (!monthly) throw new Error(`No monthly price on ${raw}`);
+    return monthly.id;
+  }
+
+  /** Invoices, the card on file, and canceling. Falls back to the Dashboard portal if a custom configuration cannot be used. */
   async portalUrl(customerId: string): Promise<string> {
+    const configuration = await this.portalConfiguration();
+    try {
+      return await this.openPortal(customerId, configuration);
+    } catch (err) {
+      if (!configuration) throw err;
+      this.log.warn(`Portal with configuration failed, opening the default: ${publicBillingError(err)}`);
+      this.portalConfigId = undefined;
+      return this.openPortal(customerId);
+    }
+  }
+
+  private async openPortal(customerId: string, configuration?: string): Promise<string> {
     const session = await this.stripe().billingPortal.sessions.create({
       customer: customerId,
-      configuration: await this.portalConfiguration(),
       return_url: `${config.publicBaseUrl}/account`,
+      ...(configuration ? { configuration } : {}),
     });
     return session.url;
   }
 
   private portalConfigId?: string;
 
-  private async portalConfiguration(): Promise<string> {
+  /**
+   * Invoice history, card updates, and cancel-at-period-end. A key that cannot
+   * write portal configurations still gets the account's saved default portal.
+   * Hosted portal login is left off by not turning it on.
+   */
+  private async portalConfiguration(): Promise<string | undefined> {
     if (this.portalConfigId) return this.portalConfigId;
-    const stripe = this.stripe();
-    const listed = await stripe.billingPortal.configurations.list({ limit: 100, active: true });
-    const found = listed.data.find((row) => portalReady(row));
-    if (found) {
-      this.portalConfigId = found.id;
-      return found.id;
+    try {
+      const stripe = this.stripe();
+      const listed = await stripe.billingPortal.configurations.list({ limit: 100, active: true });
+      const found = listed.data.find((row) => portalReady(row));
+      if (found) {
+        this.portalConfigId = found.id;
+        return found.id;
+      }
+      const created = await stripe.billingPortal.configurations.create({
+        name: 'Ketchikan.Vote',
+        metadata: { app: 'kgb-ask' },
+        default_return_url: `${config.publicBaseUrl}/account`,
+        business_profile: { headline: 'Invoices and your subscription' },
+        features: {
+          invoice_history: { enabled: true },
+          payment_method_update: { enabled: true },
+          subscription_cancel: { enabled: true, mode: 'at_period_end', proration_behavior: 'none' },
+        },
+      });
+      this.portalConfigId = created.id;
+      return created.id;
+    } catch (err) {
+      this.log.warn(`Portal configuration unavailable: ${publicBillingError(err)}`);
+      return undefined;
     }
-    const created = await stripe.billingPortal.configurations.create({
-      name: 'Ketchikan.Vote',
-      metadata: { app: 'kgb-ask' },
-      default_return_url: `${config.publicBaseUrl}/account`,
-      login_page: { enabled: false },
-      business_profile: { headline: 'Invoices and your Ketchikan.Vote subscription' },
-      features: {
-        invoice_history: { enabled: true },
-        payment_method_update: { enabled: true },
-        subscription_cancel: { enabled: true, mode: 'at_period_end', proration_behavior: 'none' },
-      },
-    });
-    this.portalConfigId = created.id;
-    return created.id;
   }
 
   /** Verifies the signature, then updates who can ask. The success page does not grant access. */
@@ -172,15 +213,32 @@ export class BillingService {
 }
 
 function portalReady(row: Stripe.BillingPortal.Configuration): boolean {
-  const cancel = row.features.subscription_cancel;
-  return (
+  const features = row.features;
+  const cancel = features?.subscription_cancel;
+  return Boolean(
     row.metadata?.app === 'kgb-ask' &&
-    row.features.invoice_history.enabled &&
-    row.features.payment_method_update.enabled &&
-    cancel.enabled &&
-    cancel.mode === 'at_period_end' &&
-    row.login_page?.enabled === false
+      features?.invoice_history?.enabled &&
+      features?.payment_method_update?.enabled &&
+      cancel?.enabled &&
+      cancel.mode === 'at_period_end' &&
+      row.login_page?.enabled !== true,
   );
+}
+
+function missingCustomer(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : '';
+  return /no such customer/i.test(message);
+}
+
+/** Stripe's own sentence, with any key material removed, for the account page. */
+export function publicBillingError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : '';
+  return raw
+    .replace(/\b(?:rk|sk)_(?:live|test)_[A-Za-z0-9]+/g, '…')
+    .replace(/\bwhsec_[A-Za-z0-9]+/g, '…')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
 }
 
 function stripeId(value: string | { id: string } | null | undefined): string | null {

@@ -1,7 +1,7 @@
-import { BadRequestException, Body, Controller, Get, Header, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, Logger, Param, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { capFor } from '../ask/ask-logic';
-import { BillingService } from '../ask/billing.service';
+import { BillingService, publicBillingError } from '../ask/billing.service';
 import { AskService } from '../ask/ask.service';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
@@ -28,6 +28,7 @@ const ACCOUNT_FLASH: Record<string, string> = {
 
 @Controller()
 export class AccountController {
+  private log = new Logger(AccountController.name);
   constructor(
     private accounts: AccountService,
     private billing: BillingService,
@@ -68,13 +69,13 @@ export class AccountController {
 
   @Get('account')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async account(@Req() req: Request, @Res() res: Response, @Query('done') done?: string) {
+  async account(@Req() req: Request, @Res() res: Response, @Query('done') done?: string, @Query('why') why?: string) {
     const reader = await this.accounts.readerFrom(req);
     if (!reader) {
       res.redirect(303, '/login?next=%2Faccount');
       return;
     }
-    res.type('html').send(accountPage(await this.model(reader.id, done)));
+    res.type('html').send(accountPage(await this.model(reader.id, done, why)));
   }
 
   @Post('account')
@@ -92,27 +93,33 @@ export class AccountController {
   async checkout(@Req() req: Request, @Res() res: Response) {
     const reader = await this.accounts.readerFrom(req);
     if (!reader || !config.askBillingReady) {
-      res.redirect(303, '/account?done=pay-failed');
+      res.redirect(303, payFailed('Payments are not turned on.'));
       return;
     }
     try {
       res.redirect(303, await this.billing.checkoutUrl(reader.id, '/account'));
-    } catch {
-      res.redirect(303, '/account?done=pay-failed');
+    } catch (err) {
+      this.log.warn(`Checkout failed: ${publicBillingError(err)}`);
+      res.redirect(303, payFailed(publicBillingError(err)));
     }
   }
 
   @Post('account/portal')
   async portal(@Req() req: Request, @Res() res: Response) {
     const reader = await this.accounts.readerFrom(req);
-    if (!reader?.stripeCustomerId || !config.askBillingReady) {
-      res.redirect(303, '/account?done=pay-failed');
+    if (!reader || !config.askBillingReady) {
+      res.redirect(303, payFailed('Payments are not turned on.'));
+      return;
+    }
+    if (!reader.stripeCustomerId) {
+      res.redirect(303, '/account');
       return;
     }
     try {
       res.redirect(303, await this.billing.portalUrl(reader.stripeCustomerId));
-    } catch {
-      res.redirect(303, '/account?done=pay-failed');
+    } catch (err) {
+      this.log.warn(`Portal failed: ${publicBillingError(err)}`);
+      res.redirect(303, payFailed(publicBillingError(err)));
     }
   }
 
@@ -144,7 +151,7 @@ export class AccountController {
     res.redirect(303, `${back}?comment=${flag}#comments`);
   }
 
-  private async model(id: string, done?: string): Promise<AccountPageModel> {
+  private async model(id: string, done?: string, why?: string): Promise<AccountPageModel> {
     const reader = await this.prisma.subscriber.findUnique({ where: { id } });
     if (!reader) {
       return {
@@ -162,6 +169,8 @@ export class AccountController {
     const cap = capFor(paid);
     const used = await this.ask.usedThisMonth(reader.id);
     const flashKey = done === 'pending' && paid ? 'paid' : done;
+    const detail = String(why ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+    const base = flashKey ? ACCOUNT_FLASH[flashKey] : undefined;
     return {
       email: reader.email,
       displayName: cleanDisplayName(reader.displayName),
@@ -171,7 +180,7 @@ export class AccountController {
       used,
       cap,
       left: Math.max(0, cap - used),
-      flash: flashKey ? ACCOUNT_FLASH[flashKey] : undefined,
+      flash: detail && base ? `${base} ${detail}` : detail || base,
     };
   }
 
@@ -182,4 +191,9 @@ export class AccountController {
     if (!meeting || !digest || emptyRecording(digest)) return '/notes';
     return noteHref(meeting.id, digest.headline);
   }
+}
+
+function payFailed(why: string): string {
+  const note = why.replace(/\s+/g, ' ').trim().slice(0, 240);
+  return note ? `/account?done=pay-failed&why=${encodeURIComponent(note)}` : '/account?done=pay-failed';
 }

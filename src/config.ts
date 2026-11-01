@@ -1,6 +1,11 @@
 // All settings come from environment variables (see .env.example).
 // Getters are lazy so a missing key only errors when that feature is used.
 
+/** Railway pastes sometimes keep quotes or a trailing newline. Stripe then says the price or key does not exist. */
+function stripeValue(key: string): string {
+  return (process.env[key] || '').trim().replace(/^['"]+|['"]+$/g, '');
+}
+
 function req(key: string): string {
   const v = process.env[key];
   if (!v) throw new Error(`Missing required env var ${key}`);
@@ -114,9 +119,9 @@ export const config = {
     );
   },
   /** Restricted key (rk_) preferred. Missing keys leave paid Ask off; the free questions still work. */
-  get stripeSecretKey() { return process.env.STRIPE_SECRET_KEY || ''; },
-  get stripeWebhookSecret() { return process.env.STRIPE_WEBHOOK_SECRET || ''; },
-  get stripePriceId() { return process.env.STRIPE_PRICE_ID || ''; },
+  get stripeSecretKey() { return stripeValue('STRIPE_SECRET_KEY'); },
+  get stripeWebhookSecret() { return stripeValue('STRIPE_WEBHOOK_SECRET'); },
+  get stripePriceId() { return stripeValue('STRIPE_PRICE_ID'); },
   /** Checkout, the customer portal, and the webhook. Tax is not turned on here. */
   get askBillingReady() {
     return Boolean(this.stripeSecretKey && this.stripeWebhookSecret && this.stripePriceId && process.env.PUBLIC_BASE_URL);
