@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { publicArticle } from './page';
+import { OWN_BEHALF, publicArticle } from './page';
 import { esc } from '../util';
 
 function origin(): string {
@@ -51,7 +51,7 @@ function a(href: string, label: string): string {
 export function aboutPage(): string {
   const email = publisherEmail();
   const description =
-    'Ketchikan.Vote is a project by Mitchel Turner to help local journalists and residents find what a public meeting decided, with a link to the recording.';
+    `Ketchikan.Vote is a project by Mitchel Turner. ${OWN_BEHALF}`;
   return publicArticle({
     title: 'About Ketchikan.Vote',
     description,
@@ -61,7 +61,7 @@ export function aboutPage(): string {
 <h1>About Ketchikan.Vote</h1>
 <p class="dek">A finding aid for Ketchikan's public meetings, published so a resident or a reporter can find the decision and the minute it happened.</p>
 <div class="body">
-<p>Ketchikan.Vote is a project by <a href="https://mitchelturner.com" rel="me">Mitchel Turner</a> of <a href="https://mitchelturner.dev" rel="me">Mitchel Turner Dev, LLC</a>. It helps local journalists and residents find what a Borough or City meeting decided, what people argued about, and the moment in the recording where it happened.</p>
+<p>Ketchikan.Vote is a project by <a href="https://mitchelturner.com" rel="me">Mitchel Turner</a> of <a href="https://mitchelturner.dev" rel="me">Mitchel Turner Dev, LLC</a>. ${OWN_BEHALF} It helps local journalists and residents find what a Borough or City meeting decided, what people argued about, and the moment in the recording where it happened.</p>
 <p>This is not an official publication of the Ketchikan Gateway Borough or the City of Ketchikan. Those governments keep the recordings, the agendas, and the minutes. This site writes a plain-language recap from the recordings and points back at them.</p>
 <h2>How a recap is made</h2>
 <p>The recording is transcribed. A recap is written with AI. Names are checked against the published roster and the agenda. Each decision links to that point in the video. The words can be wrong. The recording is the source. <a href="/#how">How we report</a> is the short version of that.</p>
@@ -70,7 +70,7 @@ export function aboutPage(): string {
 <h2>For journalists</h2>
 <p>Use a recap to find the vote and the timestamp, then quote the recording. Link the recap if it helped you find the minute. <a href="/topics">Topic pages</a> follow one issue across meetings. <a href="/boards">Who sits on each board</a> and <a href="/testify">how to speak at a meeting</a> are their own pages, with links to the official instructions.</p>
 <h2>A note on the Planning Commission</h2>
-<p>Mitchel Turner is a member of the Ketchikan Gateway Borough Planning Commission. Recaps of that commission are written from the recording in the same way as any other meeting. This site is not a commission publication.</p>
+<p>Mitchel Turner is a member of the Ketchikan Gateway Borough Planning Commission. ${OWN_BEHALF} Recaps of that commission are written from the recording in the same way as any other meeting. This site is not a commission publication.</p>
 </div>`,
     jsonLd: graph([
       {
@@ -83,7 +83,7 @@ export function aboutPage(): string {
           name: 'Ketchikan.Vote',
           url: `${origin()}/`,
           parentOrganization: { '@type': 'Organization', name: 'Mitchel Turner Dev, LLC', url: 'https://mitchelturner.dev' },
-          founder: { '@type': 'Person', name: 'Mitchel Turner', url: 'https://mitchelturner.com' },
+          founder: { '@type': 'Person', name: 'Mitchel Turner', url: 'https://mitchelturner.com', description: OWN_BEHALF },
         },
       },
       {
@@ -124,7 +124,8 @@ export function boardsPage(): string {
 <section class="board" id="planning">
 <h2>Planning Commission</h2>
 <p>The commission meets on the second Tuesday of the month at 6:00 p.m. in the Assembly Chambers at the White Cliff Building, 1900 First Avenue. It may also meet on the fourth Tuesday. Four members live inside city limits and three live in the Borough outside the city. Members are appointed, not elected.</p>
-<p class="who"><span>Members</span> Jos Govaars, chair, rural seat; Trevor Shaw, vice chair, rural seat; Mitchel Turner, city seat, who also publishes this site; Diane Gubatayao, city seat; Darlene Dollimont-Svenson, rural seat; Robb Arnold, city seat; Janalee Gage, city seat</p>
+<p class="who"><span>Members</span> Jos Govaars, chair, rural seat; Trevor Shaw, vice chair, rural seat; Mitchel Turner, city seat; Diane Gubatayao, city seat; Darlene Dollimont-Svenson, rural seat; Robb Arnold, city seat; Janalee Gage, city seat</p>
+<p>Mitchel Turner also publishes this site. ${OWN_BEHALF}</p>
 <p>${a('/notes?body=Planning%20Commission', 'Planning Commission recaps')} · ${a(PLANNING, 'Planning Commission')} · ${a(PLANNING_MEETINGS, 'Meetings and hearings')}</p>
 </section>
 <section class="board" id="city-council">
