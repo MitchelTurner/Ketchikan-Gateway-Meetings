@@ -11,6 +11,16 @@ export interface OutgoingEmail {
   unsubscribeUrl?: string;
 }
 
+/** The address in EMAIL_FROM, with the inbox name Ketchikan.Vote unless a different name was set. */
+export function inboxFrom(raw: string): string {
+  const trimmed = raw.trim();
+  const addressed = trimmed.match(/^(.*)<([^>]+)>\s*$/);
+  const address = (addressed ? addressed[2] : trimmed).trim();
+  const name = (addressed ? addressed[1] : '').replace(/^"|"$/g, '').trim();
+  const display = !name || name === 'Borough Meeting Recap' ? 'Ketchikan.Vote' : name;
+  return `${display} <${address}>`;
+}
+
 @Injectable()
 export class EmailService {
   private client?: Resend;
@@ -26,7 +36,7 @@ export class EmailService {
       headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click';
     }
     const { data, error } = await this.resend.emails.send({
-      from: config.emailFrom,
+      from: inboxFrom(config.emailFrom),
       to: e.to,
       subject: e.subject,
       html: e.html,

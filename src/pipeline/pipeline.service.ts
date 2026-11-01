@@ -7,6 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { AnalysisService, MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { emptyRecording } from '../analysis/empty-recording';
+import { VOTE_HOLD, voteMismatch, voteProse } from '../analysis/votes';
 import { config } from '../config';
 import { EmailService } from '../email/email.service';
 import { renderHtml, renderSubject, renderText, RenderInput } from '../email/render';
@@ -27,6 +28,14 @@ const BACKFILL_NOTE = 'Backfill: older than EMAIL_SINCE, so no email is sent. Ap
 /** Older meetings are published on /notes and never emailed. A meeting with no date is treated as current. */
 export function isBackfill(m: { meetingDate: Date | null }): boolean {
   return !!m.meetingDate && m.meetingDate < config.emailSince;
+}
+
+/** A tally that does not fit the rest of this meeting. Those recaps stay on the site until someone sends them. */
+function voteHeld(data: unknown): boolean {
+  const d = normalizeDigest(data);
+  if (!d) return false;
+  const actions = (d.actions ?? []).filter((a) => a && (a.item || a.outcome));
+  return voteMismatch(actions, voteProse(d));
 }
 
 @Injectable()
@@ -147,7 +156,7 @@ export class PipelineService {
         // Hundreds of old meetings must not each email subscribers.
         if (config.autoSend) await this.approve(meetingId);
         else await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: BACKFILL_NOTE } });
-      } else if (config.autoSend) {
+      } else if (config.autoSend && !voteHeld(fresh ?? meeting.analysis?.data)) {
         await this.approve(meetingId);
       } else {
         await this.releaseToReaders(meetingId);
@@ -320,18 +329,30 @@ export class PipelineService {
    * The recap is on the site. Email subscribers and buzz phones now, without
    * waiting for a person to review it. A phone buzz does not count as the
    * email. Backfill stays quiet, and a second pass does not send again.
+   * A mismatched vote count is left on the site with no email and no buzz.
+   * Returns true only when subscriber mail was queued.
    */
-  private async releaseToReaders(meetingId: string): Promise<void> {
+  private async releaseToReaders(meetingId: string): Promise<boolean> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
-    if (!meeting?.analysis || meeting.analysis.hiddenAt) return;
-    if (isBackfill(meeting)) return;
-    if (emptyRecording(normalizeDigest(meeting.analysis.data))) return;
+    if (!meeting?.analysis || meeting.analysis.hiddenAt) return false;
+    if (isBackfill(meeting)) return false;
+    if (emptyRecording(normalizeDigest(meeting.analysis.data))) return false;
+    if (voteHeld(meeting.analysis.data)) {
+      if (meeting.error !== VOTE_HOLD) {
+        await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: VOTE_HOLD } });
+      }
+      return false;
+    }
+    if (meeting.error === VOTE_HOLD) {
+      await this.prisma.meeting.update({ where: { id: meetingId }, data: { error: null } });
+    }
     const mailed = meeting.status === 'SENT' || meeting.status === 'SENDING';
     if (!mailed && config.emailReady) {
       await this.enqueueDeliver(meetingId);
-      return;
+      return true;
     }
     if (!meeting.analysis.notifiedAt) void this.push.notifyRecap(meetingId);
+    return false;
   }
 
   /**
@@ -356,8 +377,7 @@ export class PipelineService {
       // The startup rewrite sends this one when the new draft is saved.
       if (!checked && !m.analysis?.editedAt) continue;
       if (emptyRecording(normalizeDigest(data))) continue;
-      await this.releaseToReaders(m.id);
-      n++;
+      if (await this.releaseToReaders(m.id)) n++;
     }
     if (n) this.log.log(`Queued subscriber email for ${n} recap${n === 1 ? '' : 's'} already on the site`);
     return n;

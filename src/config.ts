@@ -94,7 +94,10 @@ export const config = {
   // Email
   get resendKey() { return req('RESEND_API_KEY'); },
   get emailFrom() { return req('EMAIL_FROM'); },
-  get newsletterName() { return opt('NEWSLETTER_NAME', 'Borough Meeting Recap'); },
+  get newsletterName() {
+    const v = opt('NEWSLETTER_NAME', 'Ketchikan.Vote');
+    return v === 'Borough Meeting Recap' ? 'Ketchikan.Vote' : v;
+  },
   get mailingAddress() { return req('MAILING_ADDRESS'); }, // CAN-SPAM requires a postal address
   get adminEmail() { return req('ADMIN_EMAIL'); },
   get autoSend() { return opt('AUTO_SEND', 'false') === 'true'; },

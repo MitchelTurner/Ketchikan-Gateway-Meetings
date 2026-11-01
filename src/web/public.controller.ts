@@ -13,7 +13,7 @@ import {
   BADGES, badgeFor, communityGoal, confirmedReaders, ensureRefCode, FOUNDING_READERS, inviteUrl, readerNumber, REF_PATTERN, referralCount,
 } from '../referrals';
 import {
-  bodyCheckboxes, ComingGroup, comingContext, comingIsPast, comingWho, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
+  bodyCheckboxes, ComingGroup, comingClock, comingContext, comingDate, comingIsPast, comingWho, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readCookie } from './stats.service';
@@ -143,7 +143,9 @@ export class PublicController {
         const when = (upcoming.when ?? '').replace(/\s+/g, ' ').trim();
         if (comingIsPast(when, m.meetingDate, today)) continue;
         seen.add(key);
-        items.push({ item, when });
+        const at = comingDate(when, m.meetingDate);
+        const clock = comingClock(when);
+        items.push({ item, when, ...(at ? { day: at.toISOString().slice(0, 10) } : {}), ...(clock ? { clock } : {}) });
         if (items.length >= 4) break;
       }
       if (!items.length) continue;
@@ -313,7 +315,7 @@ export class PublicController {
       : [];
     const raw = normalizeDigest(m.analysis?.data);
     const empty = !!raw && emptyRecording(raw);
-    return meetingPage(m, empty ? null : raw, Boolean(m.analysis?.approvedAt), segments, empty ? MIC_CHECK : '');
+    return meetingPage(m, empty ? null : raw, Boolean(m.analysis?.approvedAt), segments, empty ? MIC_CHECK : '', m.analysis?.editedAt ?? null);
   }
 
   /** Written recaps that aren't hidden, newest meeting date first. A query searches within that order. */
@@ -349,14 +351,66 @@ export class PublicController {
   /** The slug only makes the URL readable; the id finds the note. */
   @Get(['notes/:id', 'notes/:id/:slug'])
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async note(@Param('id') id: string, @Req() req: Request) {
+  async note(@Param('id') id: string, @Query('correction') correction: string | undefined, @Query('d') flagged: string | undefined, @Req() req: Request) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
     const raw = m?.analysis && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
     if (m && raw && emptyRecording(raw)) return meetingPage(m, null, false, [], MIC_CHECK);
     if (!m || !raw) {
       return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here once they've been written. <a href="/notes">Back to search</a>.</p>`);
     }
-    return noteDetailPage(m, raw, { growth: await this.growth(req), draft: !m.analysis?.approvedAt });
+    const at = Number(flagged);
+    return noteDetailPage(m, raw, {
+      growth: await this.growth(req),
+      draft: !m.analysis?.approvedAt,
+      editedAt: m.analysis?.editedAt ?? null,
+      thanks: correction === '1',
+      thanksAt: correction === '1' && Number.isInteger(at) && at >= 0 ? at : -1,
+    });
+  }
+
+  /** A reader saying one written decision is wrong. A filled-in honeypot is ignored. */
+  @Post('notes/:id/correction')
+  async correction(
+    @Param('id') id: string,
+    @Body() body: { item?: string; note?: string; i?: string; website?: string },
+    @Res() res: Response,
+  ) {
+    const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
+    const raw = m?.analysis && !m.analysis.hiddenAt ? publicDigest(m.analysis.data) : null;
+    if (!m || !raw) {
+      res.status(404).type('html').send(page('Note not found', `<h1>That note isn't up yet</h1><p><a href="/notes">Back to search</a>.</p>`));
+      return;
+    }
+    const back = noteHref(id, raw.headline);
+    const index = Number(body.i);
+    const at = Number.isInteger(index) && index >= 0 && index < 40 ? index : 0;
+    const item = String(body.item ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const note = String(body.note ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    if (String(body.website ?? '').trim()) {
+      res.redirect(303, `${back}?correction=1&d=${at}#d-${at}`);
+      return;
+    }
+    if (!item || !note) {
+      res.redirect(303, `${back}#d-${at}`);
+      return;
+    }
+    await this.prisma.correction.create({ data: { meetingId: id, item, note } });
+    const admin = process.env.ADMIN_EMAIL?.trim();
+    if (admin && config.emailReady) {
+      const link = `${config.publicBaseUrl}${back}`;
+      const desk = `${config.publicBaseUrl}/admin/posts/${encodeURIComponent(id)}`;
+      try {
+        await this.email.send({
+          to: admin,
+          subject: 'A reader flagged a line',
+          html: `<p>A reader says this line may be wrong.</p><p><strong>${esc(item)}</strong></p><p>${esc(note)}</p><p><a href="${esc(link)}">The recap</a> · <a href="${esc(desk)}">Editor's desk</a></p>`,
+          text: `A reader says this line may be wrong.\n\n${item}\n\n${note}\n\n${link}\n${desk}`,
+        });
+      } catch (err) {
+        this.log.warn(`Correction notice failed: ${(err as Error).message}`);
+      }
+    }
+    res.redirect(303, `${back}?correction=1&d=${at}#d-${at}`);
   }
 
   /**

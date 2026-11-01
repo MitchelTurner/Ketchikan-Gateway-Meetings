@@ -292,7 +292,10 @@ export class AdminController {
   @UseGuards(AdminGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
   async post(@Param('id') id: string, @Query('done') done?: string) {
-    const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true, transcript: { select: { id: true } } } });
+    const m = await this.prisma.meeting.findUnique({
+      where: { id },
+      include: { analysis: true, transcript: { select: { id: true } }, corrections: { orderBy: { createdAt: 'desc' }, take: 30 } },
+    });
     if (!m?.analysis) throw new NotFoundException();
     const a = m.analysis;
     const digest = normalizeDigest(a.data);
@@ -325,6 +328,7 @@ export class AdminController {
       caveats: digest?.caveats ?? [],
       hasTranscript: Boolean(m.transcript),
       sourceUrl: m.sourceUrl,
+      corrections: m.corrections.map((c) => ({ item: c.item, note: c.note, createdAt: c.createdAt })),
       flash: done ? FLASH[done] : undefined,
     });
   }

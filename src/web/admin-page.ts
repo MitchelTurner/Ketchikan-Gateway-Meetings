@@ -241,6 +241,7 @@ export interface AdminPost {
   caveats: string[];
   hasTranscript: boolean;
   sourceUrl: string;
+  corrections: { item: string; note: string; createdAt: Date }[];
   flash?: string;
 }
 
@@ -249,17 +250,24 @@ export function adminPostPage(p: AdminPost): string {
   let publish = '';
   if (p.state === 'draft') {
     const emailed = p.status === 'SENT' || p.status === 'SENDING';
+    const held = (p.error ?? '').startsWith('Email held');
     const emailNote = p.backfill
       ? 'This is an older meeting, so it is published without email.'
       : emailed
         ? 'Subscribers were emailed this recap when it went on the site.'
-        : p.emailReady
-          ? `New recaps email themselves. This one can go to ${plural(p.subscribers, 'subscriber')} now.`
-          : "Email isn't connected yet, so this stays on the site only until Resend is configured.";
+        : !p.emailReady
+          ? "Email isn't connected yet, so this stays on the site only until Resend is configured."
+          : held
+            ? 'A vote count does not match the rest of this meeting, so subscribers were not emailed. Send it if the tally is right.'
+            : `New recaps email themselves. This one can go to ${plural(p.subscribers, 'subscriber')} now.`;
     const actions = emailed
       ? ''
       : !p.backfill && p.emailReady
-        ? postButton(`${base}/approve`, 'Email subscribers', { confirm: `Email this recap to ${p.subscribers} subscriber(s)?` }) +
+        ? postButton(`${base}/approve`, 'Email subscribers', {
+            confirm: held
+              ? 'A vote count does not match the rest of this meeting. Email subscribers anyway?'
+              : `Email this recap to ${p.subscribers} subscriber(s)?`,
+          }) +
           postButton(`${base}/publish`, 'Site only', { cls: 'ghost' })
         : postButton(`${base}/publish`, 'Publish on the site');
     publish = `<div class="panel"><h3>${emailed ? 'Email' : 'Publish'}</h3><p>${esc(emailNote)}</p>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`;
@@ -273,6 +281,9 @@ export function adminPostPage(p: AdminPost): string {
           cls: 'warn',
           confirm: 'Hide this post from every public page?',
         })}</div>`;
+  const corrections = p.corrections.length
+    ? `<ul>${p.corrections.map((c) => `<li><strong>${esc(c.item)}</strong>${c.note ? ` — ${esc(c.note)}` : ''} <span class="meta">${esc(stamp(c.createdAt))}</span></li>`).join('')}</ul>`
+    : '<p>None yet.</p>';
   const names = p.nameCorrections.length
     ? `<ul>${p.nameCorrections.map((c) => `<li>“${esc(c.heard)}” → ${esc(c.corrected)}</li>`).join('')}</ul>`
     : '<p>None.</p>';
@@ -297,6 +308,7 @@ ${p.error ? `<div class="flash bad">${esc(p.error)}</div>` : ''}
 </form>
 <aside>
 ${publish}${visibility}
+<div class="panel"><h3>Reader corrections</h3>${corrections}</div>
 <div class="panel"><h3>Names corrected</h3>${names}</div>
 <div class="panel"><h3>Checked against</h3>${sources}</div>
 ${p.caveats.length ? `<div class="panel"><h3>Caveats</h3><ul>${p.caveats.map((c) => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}

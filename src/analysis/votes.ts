@@ -157,6 +157,14 @@ export function voteNote(action: VoteAction, head: number | null, prose = ''): s
   return read.total < head ? `short of the ${head} on the other votes` : `more than the ${head} on the other votes`;
 }
 
+/** Shown on the meeting when subscriber email is waiting on a mismatched tally. */
+export const VOTE_HOLD = 'Email held: a vote count does not match the rest of this meeting.';
+
+/** True when any tally does not fit the headcount of that meeting. */
+export function voteMismatch(actions: VoteAction[], prose = ''): boolean {
+  return reviewVotes(actions, prose).notes.some(Boolean);
+}
+
 export function reviewVotes(actions: VoteAction[], prose = ''): { headcount: number | null; notes: string[] } {
   const headcount = meetingHeadcount(actions);
   return { headcount, notes: actions.map((a) => voteNote(a, headcount, prose)) };

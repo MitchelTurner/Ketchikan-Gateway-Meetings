@@ -94,6 +94,11 @@ p.who span{margin-right:6px;font:600 11px/1 var(--sans);letter-spacing:.04em;tex
 .coming li{padding:10px 0;border-top:1px solid var(--line);font:500 15.5px/1.45 var(--sans);color:var(--text)}
 .coming li:last-child{padding-bottom:2px}
 .coming .meta{display:block;margin-top:3px;font:400 13.5px/1.4 var(--sans);color:var(--muted)}
+.coming .dates{margin:0 0 4px}
+.coming .dates li{padding:0}
+.coming .dates a{display:flex;flex-direction:column;gap:2px;padding:12px 0;text-decoration:none}
+.coming .dates .when{font:600 13px/1.35 var(--sans);letter-spacing:0;text-transform:none;color:var(--teal)}
+.coming .dates .what{font:500 15.5px/1.45 var(--sans);color:var(--text)}
 .docket-empty[hidden]{display:none}
 #docket-filter{margin:0 0 12px}
 .hint{font:400 13px/1.5 var(--sans);color:var(--muted);margin:10px 0 0}
@@ -178,6 +183,17 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .body a{color:var(--teal)}
 .ts{display:inline-flex;align-items:center;height:22px;padding:0 8px;margin-left:2px;border-radius:6px;background:var(--surface-2);font:500 12px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--text-2);text-decoration:none;white-space:nowrap;vertical-align:1px}
 .ts:hover{background:var(--teal);color:var(--bg)}
+button.linkish{display:inline;width:auto;margin:0;padding:0;background:none;border:0;border-radius:0;color:var(--teal);font:500 14px/1.4 var(--sans);letter-spacing:0;cursor:pointer}
+button.linkish:hover{opacity:1;text-decoration:underline}
+.act{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:8px 0 0}
+.fix{margin:12px 0 4px}
+.fix[hidden]{display:none}
+.fix label{margin-top:0}
+.fix textarea{min-height:88px}
+.fix button{margin-top:12px}
+.hp{position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden}
+.thanks{margin:0 0 14px;padding:12px 14px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);font:500 15px/1.45 var(--sans);color:var(--text)}
+.body li{scroll-margin-top:18px}
 .notice{margin-top:52px;padding:22px 24px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font:400 14.5px/1.65 var(--sans);color:var(--text-2)}
 .notice strong{display:block;font:500 12px/1.4 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--text);margin-bottom:8px}
 .notice a{color:var(--teal)}
@@ -626,6 +642,19 @@ var t=b.getAttribute('data-copy'),l=b.textContent,done=function(){b.textContent=
 if(navigator.clipboard)navigator.clipboard.writeText(t).then(done,function(){prompt('Copy this link',t)});else prompt('Copy this link',t)})});
 if(navigator.share)document.querySelectorAll('[data-share]').forEach(function(b){b.hidden=false;b.addEventListener('click',function(){
 navigator.share({title:b.getAttribute('data-title')||document.title,text:b.getAttribute('data-text')||'',url:b.getAttribute('data-share')}).catch(function(){})})});
+document.querySelectorAll('[data-line]').forEach(function(b){b.addEventListener('click',function(){
+var line=b.getAttribute('data-line')||'',video=b.getAttribute('data-video')||'',label=b.textContent;
+if(navigator.share){navigator.share({title:line,text:line,url:video}).catch(function(){});return;}
+var t=line+'\\n'+video,done=function(){b.textContent='Copied';setTimeout(function(){b.textContent=label},1800)};
+if(navigator.clipboard)navigator.clipboard.writeText(t).then(done,function(){prompt('Copy this',t)});else prompt('Copy this',t)})});
+document.querySelectorAll('[data-fix]').forEach(function(b){b.addEventListener('click',function(){
+var form=document.getElementById(b.getAttribute('data-fix')||'');
+if(!form)return;
+var open=form.hidden;
+form.hidden=!open;
+b.setAttribute('aria-expanded',open?'true':'false');
+if(open){var area=form.querySelector('textarea');if(area)area.focus();}
+})});
 })()</script>`;
 
 function withParam(url: string, key: string, value: string): string {
@@ -948,6 +977,10 @@ function membersLine(body: string): string {
 export interface ComingItem {
   item: string;
   when: string;
+  /** YYYY-MM-DD when the line names a calendar day. */
+  day?: string;
+  /** "6pm" or "6:30pm" when the line names a clock time. */
+  clock?: string;
 }
 
 /** One meeting's next steps, with enough of the recap that "the draft" has a subject. */
@@ -996,6 +1029,28 @@ export function comingDate(when: string, meeting: Date | null): Date | null {
   return new Date(Date.UTC(year, month, day, 12));
 }
 
+/** "6pm" or "6:30pm". Empty when the line names no clock time. */
+export function comingClock(when: string): string {
+  const m = String(when ?? '').match(/\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i);
+  if (!m) return '';
+  let hour = Number(m[1]);
+  const minute = m[2] ? Number(m[2]) : 0;
+  if (hour < 1 || hour > 12 || minute > 59) return '';
+  const pm = /^p/i.test(m[3]);
+  if (pm && hour < 12) hour += 12;
+  if (!pm && hour === 12) hour = 0;
+  const hour12 = hour % 12 || 12;
+  const suffix = hour >= 12 ? 'pm' : 'am';
+  return minute ? `${hour12}:${String(minute).padStart(2, '0')}${suffix}` : `${hour12}${suffix}`;
+}
+
+/** "Thu Nov 12" for a YYYY-MM-DD day. UTC noon is that same calendar day in Alaska. */
+export function comingDayLabel(iso: string): string {
+  const at = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).replace(',', '');
+}
+
 /** A named date that is already over. Timing with no calendar day stays. */
 export function comingIsPast(when: string, meeting: Date | null, today: Date): boolean {
   const at = comingDate(when, meeting);
@@ -1030,6 +1085,18 @@ export function comingContext(summary: string): string {
 /** What the latest meetings said happens next. Each group is one meeting, so the subject is on the page. */
 export function comingSection(groups: ComingGroup[]): string {
   if (!groups.length) return '';
+  const dated = groups.flatMap((g) =>
+    g.items.flatMap((c) => (c.day ? [{ day: c.day, clock: c.clock ?? '', who: g.who, item: c.item, href: g.href }] : [])),
+  );
+  dated.sort((a, b) => a.day.localeCompare(b.day) || a.who.localeCompare(b.who) || a.item.localeCompare(b.item));
+  const agenda = dated.length
+    ? `<ul class="dates">${dated
+        .map((c) => {
+          const when = [comingDayLabel(c.day), c.who, c.clock].filter(Boolean).join(' · ');
+          return `<li><a href="${esc(c.href)}"><span class="when">${esc(when)}</span><span class="what">${esc(c.item)}</span></a></li>`;
+        })
+        .join('')}</ul>`
+    : '';
   const blocks = groups
     .map((g) => {
       const who = [g.who, g.date].filter(Boolean).join(' · ');
@@ -1041,7 +1108,7 @@ export function comingSection(groups: ComingGroup[]): string {
     .join('');
   return `<section class="coming" id="coming"><h2 class="rubric">Coming up</h2>
 <p class="muted">What the latest meetings said happens next.</p>
-${blocks}</section>`;
+${agenda}${blocks}</section>`;
 }
 
 export interface NoteHit {
@@ -1237,18 +1304,6 @@ ${membersLine(lead.body)}
     ${weekSection(week)}
     <p class="facts"><b>${archiveCount.toLocaleString('en-US')}</b> meetings on the record · Assembly, School Board, Planning and the City · Free</p>
   </div>
-  <aside class="signup" id="subscribe">
-    ${growth?.ref ? '<p class="invited">A neighbor invited you to read along.</p>' : ''}<h2>Get the recap</h2>
-    <p>One email when a recap is written.</p>
-    <form method="post" action="/subscribe"><input type="hidden" name="ref" value="${esc(growth?.ref ?? '')}">
-      <label for="email">Email address</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
-      ${bodyCheckboxes()}
-      ${topicCheckboxes(topics)}
-      <button type="submit">Subscribe</button>
-    </form>
-    <p class="hint">Confirm by email. One-click unsubscribe in every message.</p>
-    ${growth ? goalBar(growth) : ''}
-  </aside>
 </section>
 </div></div>
 <main class="wrap">
@@ -1258,6 +1313,18 @@ ${membersLine(lead.body)}
   <div><h2 class="rubric">More recaps <a href="/notes">All →</a></h2>${moreHtml}</div>
 </section>
 ${comingSection(coming)}
+<aside class="signup" id="subscribe">
+  ${growth?.ref ? '<p class="invited">A neighbor invited you to read along.</p>' : ''}<h2>Get the recap</h2>
+  <p>One email when a recap is written.</p>
+  <form method="post" action="/subscribe"><input type="hidden" name="ref" value="${esc(growth?.ref ?? '')}">
+    <label for="email">Email address</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
+    ${bodyCheckboxes()}
+    ${topicCheckboxes(topics)}
+    <button type="submit">Subscribe</button>
+  </form>
+  <p class="hint">Confirm by email. One-click unsubscribe in every message.</p>
+  ${growth ? goalBar(growth) : ''}
+</aside>
 <section class="grid">
   <div id="docket"><h2 class="rubric">The docket</h2>${docketIntro}${workList(work)}</div>
   <aside id="how"><h2 class="rubric">How we report</h2>${METHOD}</aside>
@@ -1346,13 +1413,14 @@ export function meetingPage(
   segments: { start?: number; speaker?: string; text?: string }[],
   /** Shown when the file is not a meeting, so the page does not pretend there is a recap. */
   gap = '',
+  editedAt: Date | null = null,
 ): string {
   const note = publicStatusNote(meeting.status);
   const label = gap ? '' : publicPill(meeting.status);
   const banner = label || note ? `<div class="status-line">${label}${note ? `<p class="muted">${esc(note)}</p>` : ''}</div>` : '';
   const transcript = transcriptHtml(segments);
   // A reviewed recap has its own canonical page; drafts stay out of search.
-  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, draft: !approved });
+  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, draft: !approved, editedAt });
   const date = formatDate(meeting.meetingDate);
   return shell(
     `${placeBody(meeting.body)} meeting${date ? `, ${date}` : ''} · ${config.newsletterName}`,
@@ -1372,7 +1440,7 @@ ${transcript || (gap ? '' : '<p class="empty">No transcript yet.</p>')}
 export function noteDetailPage(
   meeting: MeetingInfo,
   d: MeetingDigest,
-  opts: { banner?: string; after?: string; draft?: boolean; growth?: Growth } = {},
+  opts: { banner?: string; after?: string; draft?: boolean; growth?: Growth; editedAt?: Date | null; thanks?: boolean; thanksAt?: number } = {},
 ): string {
   const ts = (t: number) =>
     `<a class="ts" href="${esc(timestampUrl(meeting.sourceUrl, meeting.platform, t))}">▶ ${hms(t)}</a>`;
@@ -1380,6 +1448,23 @@ export function noteDetailPage(
   const list = (items: string[]) => (items.length ? `<ul>${items.map((i) => `<li>${i}</li>`).join('')}</ul>` : '');
   const actions = (d.actions ?? []).filter((a) => a && (a.item || a.outcome));
   const voteNotes = reviewVotes(actions, voteProse(d)).notes;
+  const decision = (a: (typeof actions)[number], i: number) => {
+    const vote = a.vote ? ` (${a.vote})` : '';
+    const line = `${a.item} — ${a.outcome}${vote}`.replace(/\s+/g, ' ').trim();
+    const video = timestampUrl(meeting.sourceUrl, meeting.platform, a.t);
+    const flagged = opts.thanks && opts.thanksAt === i;
+    return `<li id="d-${i}"><strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''}${voteNotes[i] ? ` <span class="meta">— ${esc(voteNotes[i])}</span>` : ''} ${ts(a.t)}
+${flagged ? `<p class="thanks">Thanks. We'll check that line.</p>` : ''}
+<div class="act"><button type="button" class="linkish" data-line="${esc(line)}" data-video="${esc(video)}">Share</button><button type="button" class="linkish" data-fix="fix-${i}" aria-expanded="false">Something wrong?</button></div>
+<form id="fix-${i}" class="fix" method="post" action="/notes/${encodeURIComponent(meeting.id)}/correction" hidden>
+<input type="hidden" name="item" value="${esc(line.slice(0, 200))}">
+<input type="hidden" name="i" value="${i}">
+<label for="note-${i}">What should we check?</label>
+<textarea id="note-${i}" name="note" maxlength="500" required></textarea>
+<p class="hp"><label for="web-${i}">Website</label><input id="web-${i}" type="text" name="website" tabindex="-1" autocomplete="off"></p>
+<button type="submit">Send</button>
+</form></li>`;
+  };
   const discussion = (d.discussion ?? []).filter((x) => x && (x.topic || x.gist));
   const comments = (d.publicComment ?? []).filter((x) => x && (x.who || x.topic || x.gist));
   const upcoming = (d.upcoming ?? []).filter((x) => x && x.item);
@@ -1391,10 +1476,7 @@ export function noteDetailPage(
       .split(/\n\s*\n/)
       .map((p) => `<p>${esc(p.trim())}</p>`)
       .join(''),
-    actions.length
-      ? h2('What they decided') +
-        list(actions.map((a, i) => `<strong>${esc(a.item)}</strong> — ${esc(a.outcome)}${a.vote ? ` (${esc(a.vote)})` : ''}${voteNotes[i] ? ` <span class="meta">— ${esc(voteNotes[i])}</span>` : ''} ${ts(a.t)}`))
-      : '',
+    actions.length ? h2('What they decided') + `<ul>${actions.map(decision).join('')}</ul>` : '',
     discussion.length
       ? h2('Also discussed') + list(discussion.map((x) => `<strong>${esc(x.topic)}.</strong> ${esc(x.gist)} ${ts(x.t)}`))
       : '',
@@ -1418,6 +1500,10 @@ export function noteDetailPage(
   ];
   const date = formatDate(meeting.meetingDate);
   const short = meeting.meetingDate ? shortDate(meeting.meetingDate, false) : '';
+  const updated = opts.editedAt
+    ? `<span>Updated ${esc(opts.editedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: config.timezone }))}</span>`
+    : '';
+  const thanksTop = opts.thanks && !(typeof opts.thanksAt === 'number' && opts.thanksAt >= 0) ? `<p class="thanks">Thanks. We'll check that line.</p>` : '';
   // Headline first for search results, then the place and date people search with.
   const title = `${d.headline} | ${placeBody(meeting.body)}${short ? `, ${short}` : ''}`;
   const canonical = noteHref(meeting.id, d.headline);
@@ -1430,7 +1516,8 @@ ${opts.banner ?? ''}<div class="kicker">${esc(placeBody(meeting.body))}</div>
 <h1>${esc(d.headline)}</h1>
 ${membersLine(meeting.body)}
 ${partsList(meeting.title, meeting.body)}
-<div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a></div>
+<div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span>${updated}<a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a></div>
+${thanksTop}
 <div class="body">${sections}</div>
 <div class="notice"><strong>How this was made</strong>Written with AI from ${isCityBody(meeting.body) ? "the City of Ketchikan's recording" : "the Borough's recording"} and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
 ${opts.after ?? ''}

@@ -36,6 +36,7 @@ model Meeting {
   topicsAt    DateTime? // when this meeting was last tagged with topics
   transcript  Transcript?
   analysis    Analysis?
+  corrections Correction[]
   sends       EmailSend[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -73,6 +74,18 @@ model Analysis {
   hiddenAt   DateTime? // taken off the public site from the admin dashboard
   editedAt   DateTime? // headline or summary changed by hand; automatic rewrites leave it alone
   createdAt  DateTime  @default(now())
+}
+
+/** A reader saying one written line is wrong. No unique constraint: the same item can be flagged twice. */
+model Correction {
+  id        String   @id @default(cuid())
+  meetingId String
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  item      String
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([meetingId])
 }
 
 /** One public page load by a person (bots and the signed-in admin are not counted). */
