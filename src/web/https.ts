@@ -66,9 +66,11 @@ export function forceHttps(publicBase: () => string | null) {
     if (requestIsHttps(req)) {
       res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
+    // Chrome and Safari check form-action against the redirect after a POST.
+    // Payment and the billing portal post here, then redirect to Stripe.
     res.setHeader(
       'Content-Security-Policy',
-      "upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'",
+      "upgrade-insecure-requests; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self' https://checkout.stripe.com https://billing.stripe.com",
     );
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
