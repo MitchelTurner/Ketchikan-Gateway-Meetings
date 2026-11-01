@@ -4,6 +4,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
 import { REF_PATTERN, SHARE_CHANNELS } from '../referrals';
+import { requestIsHttps } from './https';
 
 const BOTS =
   /bot|crawl|spider|slurp|preview|facebookexternalhit|embedly|curl|wget|python|httpx|axios|node-fetch|undici|go-http|java\/|okhttp|headless|lighthouse|monitor|uptime|pingdom|scan|fetch|feed|rss/i;
@@ -78,7 +79,8 @@ export class StatsService {
       const r = typeof req.query.r === 'string' ? req.query.r : '';
       if (req.method === 'GET' && REF_PATTERN.test(r) && !req.path.startsWith('/admin')) {
         // Remembered so a reader who browses a few recaps before signing up still credits the neighbor who invited them.
-        res.append('Set-Cookie', `kgb_ref=${r}; Path=/; SameSite=Lax; Max-Age=${30 * 24 * 3600}`);
+        const secure = requestIsHttps(req) ? '; Secure' : '';
+        res.append('Set-Cookie', `kgb_ref=${encodeURIComponent(r)}; Path=/; SameSite=Lax; Max-Age=${30 * 24 * 3600}${secure}`);
       }
       if (req.method === 'GET') {
         res.on('finish', () => {

@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma.service';
 import { normalizeDigest } from '../analysis/analysis.service';
 import { emptyRecording } from '../analysis/empty-recording';
 import { accountPage, AccountPageModel, loginPage, noteHref } from '../web/page';
+import { postedFromHere } from '../web/https';
 import { readerCookie } from '../web/reader-cookie';
 import { cleanDisplayName, safeNext } from './account-logic';
 import { AccountService } from './account.service';
@@ -129,6 +130,10 @@ export class AccountController {
 
   @Post('account/out')
   out(@Req() req: Request, @Res() res: Response) {
+    if (!postedFromHere(req)) {
+      res.redirect(303, '/account');
+      return;
+    }
     res.setHeader('Set-Cookie', readerCookie(req, ''));
     res.redirect(303, '/');
   }

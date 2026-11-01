@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
+import { redactSecrets } from '../util';
 import { accessAfterRevoke, accessAfterSubscription, AskGate, invoiceSubscriptionId } from './ask-logic';
 
 /** Groups every Ask checkout in the Stripe dashboard. The last 8 characters are fixed. */
@@ -130,7 +131,7 @@ export class BillingService {
     try {
       event = this.stripe().webhooks.constructEvent(raw, signature, config.stripeWebhookSecret);
     } catch (err) {
-      this.log.warn(`Ask webhook rejected: ${(err as Error).message}`);
+      this.log.warn(`Ask webhook rejected: ${publicBillingError(err)}`);
       throw err;
     }
     this.log.log(`Ask webhook ${event.type} ${event.id}`);
@@ -233,12 +234,7 @@ function missingCustomer(err: unknown): boolean {
 /** Stripe's own sentence, with any key material removed, for the account page. */
 export function publicBillingError(err: unknown): string {
   const raw = err instanceof Error ? err.message : '';
-  return raw
-    .replace(/\b(?:rk|sk)_(?:live|test)_[A-Za-z0-9]+/g, '…')
-    .replace(/\bwhsec_[A-Za-z0-9]+/g, '…')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 240);
+  return redactSecrets(raw);
 }
 
 function stripeId(value: string | { id: string } | null | undefined): string | null {

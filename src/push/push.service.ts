@@ -3,8 +3,9 @@ import { normalizeDigest } from '../analysis/analysis.service';
 import { emptyRecording } from '../analysis/empty-recording';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
-import { BODIES, slugify } from '../util';
+import { BODIES, redactSecrets, slugify } from '../util';
 import * as webpush from 'web-push';
+import { pushEndpointAllowed } from './push-endpoint';
 
 const KEY_ID = 'default';
 
@@ -38,6 +39,10 @@ export class PushService {
 
   /** Saves a browser that asked for notifications. The same phone updating its keys replaces the old row. An empty list means every meeting. */
   async subscribe(endpoint: string, p256dh: string, auth: string, bodies?: string[]): Promise<void> {
+    if (!pushEndpointAllowed(endpoint)) {
+      this.log.warn('Phone subscription rejected: endpoint host is not a push service');
+      return;
+    }
     const data: { p256dh: string; auth: string; bodies?: string[] } = { p256dh, auth };
     if (bodies !== undefined) data.bodies = cleanBodies(bodies);
     const existing = await this.prisma.pushSubscription.findFirst({ where: { endpoint }, select: { id: true } });
@@ -79,11 +84,15 @@ export class PushService {
       }
       await this.prisma.analysis.update({ where: { meetingId }, data: { notifiedAt: new Date() } });
     } catch (err) {
-      this.log.warn(`Phone notifications failed: ${(err as Error).message}`);
+      this.log.warn(`Phone notifications failed: ${redactSecrets((err as Error).message)}`);
     }
   }
 
   private async sendOne(sub: { id: string; endpoint: string; p256dh: string; auth: string }, payload: string): Promise<void> {
+    if (!pushEndpointAllowed(sub.endpoint)) {
+      await this.prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => undefined);
+      return;
+    }
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
@@ -96,7 +105,7 @@ export class PushService {
         await this.prisma.pushSubscription.delete({ where: { id: sub.id } }).catch(() => undefined);
         return;
       }
-      this.log.warn(`Notification not delivered: ${(err as Error).message}`);
+      this.log.warn(`Notification not delivered: ${redactSecrets((err as Error).message)}`);
     }
   }
 

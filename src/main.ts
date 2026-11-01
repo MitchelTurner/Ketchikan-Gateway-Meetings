@@ -8,6 +8,7 @@ import { config } from './config';
 import { refuseAiCrawlers } from './web/ai-opt-out';
 import { forceHttps } from './web/https';
 import { HtmlExceptionFilter } from './web/http-exception.filter';
+import { rateLimit } from './web/limit';
 import { StatsService } from './web/stats.service';
 
 function publicHttpsBase(): string | null {
@@ -26,6 +27,7 @@ async function bootstrap() {
   app.set('trust proxy', 1);
   app.use(forceHttps(publicHttpsBase));
   app.use(refuseAiCrawlers);
+  app.use(rateLimit());
   app.useGlobalFilters(new HtmlExceptionFilter());
   app.use(app.get(StatsService).middleware());
   app.enableShutdownHooks();

@@ -11,6 +11,17 @@ export const esc = (s: unknown) =>
 
 export const randomToken = () => randomBytes(24).toString('base64url');
 
+/** Log and error text with key material removed. */
+export function redactSecrets(message: string): string {
+  return String(message ?? '')
+    .replace(/\bsk-ant-[A-Za-z0-9_-]+/g, '…')
+    .replace(/\b(?:rk|sk)_(?:live|test)_[A-Za-z0-9]+/g, '…')
+    .replace(/\bwhsec_[A-Za-z0-9]+/g, '…')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
 export function sign(value: string): string {
   return createHmac('sha256', config.signingSecret).update(value).digest('base64url');
 }

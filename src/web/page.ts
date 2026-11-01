@@ -946,6 +946,9 @@ body.desk .wrap{max-width:1180px}
 .adminbar .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;min-height:52px;font:500 14px/1 var(--sans)}
 .adminbar a{text-decoration:none;color:var(--text-2);padding:8px 12px;border-radius:999px}
 .adminbar a:hover{color:var(--text);background:var(--surface-2)}
+.adminbar form{margin:0}
+.adminbar button.linkish{width:auto;margin:0;padding:8px 12px;background:none;border:0;border-radius:999px;color:var(--text-2);font:500 14px/1 var(--sans);letter-spacing:0;cursor:pointer}
+.adminbar button.linkish:hover{color:var(--text);background:var(--surface-2);text-decoration:none;opacity:1}
 .adminbar a.on{color:var(--text);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line-2)}
 .adminbar .label{font:500 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-right:12px}
 .adminbar .right{margin-left:auto;display:flex;gap:2px}
@@ -1016,7 +1019,7 @@ export type AdminTab = 'overview' | 'posts' | 'meetings' | 'topics' | '';
 export function adminPage(title: string, tab: AdminTab, inner: string, signedIn = true): string {
   const link = (href: string, label: string, key: AdminTab) => `<a href="${href}"${key && key === tab ? ' class="on" aria-current="page"' : ''}>${label}</a>`;
   const links = signedIn
-    ? `${link('/admin', 'Overview', 'overview')}${link('/admin/posts', 'Posts', 'posts')}${link('/admin/meetings', 'Meetings', 'meetings')}${link('/admin/topics', 'Topics', 'topics')}<span class="right"><a href="/">View site</a><a href="/admin/logout">Sign out</a></span>`
+    ? `${link('/admin', 'Overview', 'overview')}${link('/admin/posts', 'Posts', 'posts')}${link('/admin/meetings', 'Meetings', 'meetings')}${link('/admin/topics', 'Topics', 'topics')}<span class="right"><a href="/">View site</a><form method="post" action="/admin/logout"><button type="submit" class="linkish">Sign out</button></form></span>`
     : '<span class="right"><a href="/">View site</a></span>';
   return shell(
     `${title} · Admin · ${config.newsletterName}`,

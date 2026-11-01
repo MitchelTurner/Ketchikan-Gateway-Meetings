@@ -78,7 +78,7 @@ Each recap lists the rosters and agenda its names were checked against, on the p
 
 ## Admin dashboard
 
-Open `/admin` and sign in with `ADMIN_TOKEN` (the browser stays signed in for 30 days; `/admin/logout` signs out).
+Open `/admin` and sign in with `ADMIN_TOKEN` (the browser stays signed in for 30 days). A link that includes `?token=` sets the cookie and then leaves the token out of the address bar. Sign out is a button on the desk; it only signs this browser out when you submit it.
 
 - **Overview** (`/admin`): visits and page views for the last 30 days by Alaska day, compared with the 30 days before; the most-read pages; the sites readers came from; subscribers; pipeline status; and what's waiting on you.
 - **Posts** (`/admin/posts`): every recap, filtered by draft, published or hidden, with all-time views. Open one to edit the headline and summary, publish it on the site (with or without email), hide it from every public page, or rewrite it with Claude. Hand-edited drafts are skipped by automatic rewrites.
@@ -97,7 +97,7 @@ Page views are also counted on the server: the IP address and browser are hashed
 ## Admin endpoints (Bearer `ADMIN_TOKEN`)
 - `GET /admin/inspect` — what's on the archive page
 - `POST /admin/discover` — check the archive now
-- `GET /admin/meetings?status=FAILED` — list meetings. In a browser, open `/admin/meetings?token=YOUR_ADMIN_TOKEN` to read transcripts before Resend is connected. `hasTranscript` is true once transcription has finished.
+- `GET /admin/meetings?status=FAILED` — list meetings. In a browser, open `/admin/meetings?token=YOUR_ADMIN_TOKEN` once to sign in; the next page drops `token` from the address. `hasTranscript` is true once transcription has finished.
 - `POST /admin/meetings/:id/process[?reanalyze=true]` — retry / force / regenerate the research and recap
 - `GET /admin/meetings/:id/preview` — the email as subscribers will see it
 - `GET /admin/meetings/:id/transcript` — transcript text in a browser, JSON from curl

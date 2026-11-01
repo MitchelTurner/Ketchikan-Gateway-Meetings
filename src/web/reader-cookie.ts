@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import { requestIsHttps } from './https';
 import { readCookie } from './stats.service';
 
 export const READER_COOKIE = 'kgb_reader';
@@ -10,7 +11,7 @@ export function readerToken(req: Request): string {
 
 /** HttpOnly. Pass an empty token to clear it. */
 export function readerCookie(req: Request, token: string): string {
-  const secure = String(req.headers['x-forwarded-proto'] ?? '').startsWith('https') ? '; Secure' : '';
+  const secure = requestIsHttps(req) ? '; Secure' : '';
   const maxAge = token ? 180 * 24 * 3600 : 0;
   return `${READER_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }

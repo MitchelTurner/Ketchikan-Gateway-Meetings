@@ -17,14 +17,16 @@ import { Q_CONTROL } from '../queues';
 import { normalizeDigest } from '../analysis/analysis.service';
 import { esc, formatDate, shortDate, verify } from '../util';
 import { adminLoginPage, AdminOverview, adminOverviewPage, adminPostPage, AdminPostRow, adminPostsPage, PostFilter } from './admin-page';
-import { adminMeetingsPage, adminTopicsPage, adminTranscriptPage, noteHref, page } from './page';
+import { adminMeetingsPage, adminPage, adminTopicsPage, adminTranscriptPage, noteHref, page } from './page';
 import { badgeFor, FOUNDING_READERS } from '../referrals';
+import { adminPathWithoutToken, adminSafeNext } from './admin-next';
+import { postedFromHere, requestIsHttps } from './https';
 import { isAdminToken, readCookie, StatsService } from './stats.service';
 
 const MONTH = 30 * 24 * 3600;
 
-function tokenCookie(req: Request, value: string, maxAge = MONTH, path = '/'): string {
-  const secure = String(req.headers['x-forwarded-proto'] ?? '').startsWith('https') ? '; Secure' : '';
+function tokenCookie(req: Request, value: string, maxAge = MONTH, path = '/admin'): string {
+  const secure = requestIsHttps(req) ? '; Secure' : '';
   return `admin_token=${encodeURIComponent(value)}; HttpOnly; Path=${path}; SameSite=Lax; Max-Age=${maxAge}${secure}`;
 }
 
@@ -35,12 +37,21 @@ class AdminGuard implements CanActivate {
     const res = ctx.switchToHttp().getResponse<Response>();
     const header = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
     const query = typeof req.query.token === 'string' ? req.query.token : '';
-    const ok = isAdminToken(header || query || readCookie(req.headers.cookie, 'admin_token'));
-    // One browser visit with ?token= signs that browser in.
-    if (ok && query) res.setHeader('Set-Cookie', tokenCookie(req, query));
+    const fromHeader = Boolean(header) && isAdminToken(header);
+    const fromQuery = Boolean(query) && isAdminToken(query);
+    const fromCookie = isAdminToken(readCookie(req.headers.cookie, 'admin_token'));
+    const ok = fromHeader || fromQuery || fromCookie;
+    // A link with ?token= signs this browser in, then the address bar drops the token.
+    if (fromQuery) {
+      res.setHeader('Set-Cookie', tokenCookie(req, query));
+      if (req.method === 'GET') {
+        res.redirect(303, adminPathWithoutToken(req.originalUrl));
+        return false;
+      }
+    }
     // A browser gets the sign-in form; the 403 that follows is dropped because the redirect already went out.
     if (!ok && req.method === 'GET' && String(req.headers.accept ?? '').includes('text/html')) {
-      res.redirect(303, `/admin/login?next=${encodeURIComponent(req.originalUrl)}`);
+      res.redirect(303, `/admin/login?next=${encodeURIComponent(adminPathWithoutToken(req.originalUrl))}`);
     }
     return ok;
   }
@@ -76,7 +87,7 @@ export class AdminController {
   @Get('login')
   @Header('Content-Type', 'text/html; charset=utf-8')
   loginForm(@Query('next') next?: string) {
-    return adminLoginPage(safeNext(next));
+    return adminLoginPage(adminSafeNext(next));
   }
 
   @Post('login')
@@ -84,16 +95,32 @@ export class AdminController {
     const token = String(body.token ?? '');
     if (!isAdminToken(token)) {
       await new Promise((r) => setTimeout(r, 600));
-      res.status(401).type('html').send(adminLoginPage(safeNext(body.next), "That token didn't match."));
+      res.status(401).type('html').send(adminLoginPage(adminSafeNext(body.next), "That token didn't match."));
       return;
     }
     res.setHeader('Set-Cookie', tokenCookie(req, token));
-    res.redirect(303, safeNext(body.next));
+    res.redirect(303, adminSafeNext(body.next));
   }
 
   @Get('logout')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  logoutForm() {
+    return adminPage(
+      'Sign out',
+      '',
+      `<h1>Sign out</h1><p>This browser will need the admin token again.</p>
+<form method="post" action="/admin/logout"><button type="submit" class="btn">Sign out</button></form>`,
+    );
+  }
+
+  @Post('logout')
   logout(@Req() req: Request, @Res() res: Response) {
-    res.setHeader('Set-Cookie', [tokenCookie(req, '', 0), tokenCookie(req, '', 0, '/admin')]);
+    if (!postedFromHere(req)) {
+      res.redirect(303, '/admin/logout');
+      return;
+    }
+    // Path=/ clears cookies set before the cookie was limited to the desk.
+    res.setHeader('Set-Cookie', [tokenCookie(req, '', 0), tokenCookie(req, '', 0, '/')]);
     res.redirect(303, '/');
   }
 
@@ -668,12 +695,6 @@ export class AdminController {
     ]);
     return { subscribers: subs, meetings };
   }
-}
-
-/** Only paths inside the dashboard, so the sign-in form can't be used to bounce people elsewhere. */
-function safeNext(next: unknown): string {
-  const v = String(next ?? '');
-  return /^\/admin(\/|\?|$)/.test(v) && !v.startsWith('/admin/login') ? v : '/admin';
 }
 
 function fromBrowser(req: Request): boolean {

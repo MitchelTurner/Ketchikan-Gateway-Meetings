@@ -3,6 +3,7 @@ import { join } from 'path';
 import { BadRequestException, Body, Controller, Get, Header, HttpCode, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ICON_192, ICON_512 } from './icons';
+import { pushEndpointAllowed } from './push-endpoint';
 import { PushService } from './push.service';
 
 /** The uploaded mark, Ketchikan.Vote.png, copied next to the app in the image. */
@@ -33,7 +34,12 @@ self.addEventListener('push', function(event) {
 });
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  var url = (event.notification.data && event.notification.data.url) || '/';
+  var raw = (event.notification.data && event.notification.data.url) || '/';
+  var url = '/';
+  try {
+    var parsed = new URL(raw, self.location.origin);
+    if (parsed.origin === self.location.origin) url = parsed.pathname + parsed.search + parsed.hash;
+  } catch (e) {}
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
     for (var i = 0; i < list.length; i++) {
       if (list[i].url.indexOf(url) !== -1 && list[i].focus) return list[i].focus();
@@ -62,7 +68,7 @@ function pushBody(body: { endpoint?: string; keys?: { p256dh?: string; auth?: st
   const p256dh = String(body?.keys?.p256dh ?? '');
   const auth = String(body?.keys?.auth ?? '');
   const key = /^[A-Za-z0-9_-]{16,200}$/;
-  if (!endpoint.startsWith('https://') || endpoint.length > 2000) return null;
+  if (!pushEndpointAllowed(endpoint)) return null;
   if (!key.test(p256dh) || !key.test(auth)) return null;
   return { endpoint, p256dh, auth };
 }

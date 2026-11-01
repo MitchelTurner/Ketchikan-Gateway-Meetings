@@ -5,6 +5,7 @@ import type { Request, Response } from 'express';
 import { AccountService } from '../account/account.service';
 import { config } from '../config';
 import { PrismaService } from '../prisma.service';
+import { postedFromHere } from '../web/https';
 import { readerCookie } from '../web/reader-cookie';
 import { AskPageModel, askPage, AskTurnView } from '../web/page';
 import { AskLimitError, AskService, AskUnavailableError } from './ask.service';
@@ -63,6 +64,10 @@ export class AskController {
 
   @Post('ask/out')
   out(@Req() req: Request, @Res() res: Response) {
+    if (!postedFromHere(req)) {
+      res.redirect(303, '/ask');
+      return;
+    }
     res.setHeader('Set-Cookie', readerCookie(req, ''));
     res.redirect(303, '/ask');
   }
@@ -105,7 +110,7 @@ export class AskController {
       await this.ask.ask(reader.id, question, meeting);
     } catch (err) {
       const done = err instanceof AskLimitError ? 'cap' : 'failed';
-      if (!(err instanceof AskLimitError) && !(err instanceof AskUnavailableError)) this.log.warn(`Ask failed: ${(err as Error).message}`);
+      if (!(err instanceof AskLimitError) && !(err instanceof AskUnavailableError)) this.log.warn(`Ask failed: ${publicBillingError(err)}`);
       return res.redirect(303, `/ask${meeting ? `?m=${encodeURIComponent(meeting)}&` : '?'}done=${done}`);
     }
     res.redirect(303, '/ask');

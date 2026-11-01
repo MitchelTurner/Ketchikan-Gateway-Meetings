@@ -8,7 +8,7 @@ import { confirmEmail, confirmExpiresAt } from '../email/confirm';
 import { EmailService } from '../email/email.service';
 import { loginEmail } from '../email/letter';
 import { PrismaService } from '../prisma.service';
-import { randomToken } from '../util';
+import { randomToken, redactSecrets } from '../util';
 import { readerToken } from '../web/reader-cookie';
 import {
   COMMENT_DAY_CAP,
@@ -73,7 +73,7 @@ export class AccountService {
       }
       return 'sent';
     } catch (err) {
-      this.log.warn(`Sign-in email not sent: ${(err as Error).message}`);
+      this.log.warn(`Sign-in email not sent: ${redactSecrets((err as Error).message)}`);
       return 'failed';
     }
   }
@@ -83,10 +83,11 @@ export class AccountService {
     if (!/^[A-Za-z0-9_-]{20,200}$/.test(nonce)) return null;
     const reader = await this.prisma.subscriber.findFirst({ where: { loginNonce: nonce } });
     if (!reader || !loginStillOpen(reader.loginExpiresAt) || !sessionOpen(reader)) return null;
-    await this.prisma.subscriber.update({
-      where: { id: reader.id },
+    const claimed = await this.prisma.subscriber.updateMany({
+      where: { id: reader.id, loginNonce: nonce },
       data: { loginNonce: null, loginExpiresAt: null },
     });
+    if (claimed.count !== 1) return null;
     return reader;
   }
 
