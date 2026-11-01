@@ -398,7 +398,7 @@ window.addEventListener('hashchange',mark);
 
 function footer(): string {
   return `<footer class="site"><div class="wrap">
-<p>Ketchikan.Vote is an independent project by <a href="https://mitchelturner.com" rel="me">Mitchel Turner</a> of <a href="https://mitchelturner.dev" rel="me">Mitchel Turner Dev, LLC</a>. ${OWN_BEHALF} It helps local journalists and residents find what a public meeting decided. It is not a Ketchikan Gateway Borough or City of Ketchikan publication. Recaps are written with AI from the Borough's recordings and the City's YouTube videos, and can contain mistakes.</p>
+<p>Ketchikan.Vote is an independent project by <a href="https://mitchelturner.com" rel="me">Mitchel Turner</a> of <a href="https://mitchelturner.dev" rel="me">Mitchel Turner Dev, LLC</a>. It helps local journalists and residents find what a public meeting decided. It is not a Ketchikan Gateway Borough or City of Ketchikan publication. Recaps are written with AI from the Borough's recordings and the City's YouTube videos, and can contain mistakes.</p>
 <nav aria-label="About this site">
 <a href="/about">About</a>
 <a href="/boards">Boards</a>
@@ -440,11 +440,8 @@ function isoDay(d: Date): string {
   return d.toLocaleDateString('en-CA', { timeZone: config.timezone });
 }
 
-/** Said wherever the site names Mitchel Turner. */
-export const OWN_BEHALF = 'He is speaking only on his own behalf and not representing any group or interest.';
-
 function publisherPerson(): Record<string, unknown> {
-  return { '@type': 'Person', name: 'Mitchel Turner', url: 'https://mitchelturner.com', description: OWN_BEHALF };
+  return { '@type': 'Person', name: 'Mitchel Turner', url: 'https://mitchelturner.com' };
 }
 
 /** The publisher search engines should attach to every public page. */
