@@ -18,6 +18,7 @@ import {
   bodyCheckboxes, ComingGroup, comingClock, comingContext, comingDate, comingIsPast, comingWho, Growth, inviteKit, meetingPage, NoteHit, NoteTalk, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
+import { aiRobotsGroup } from './ai-opt-out';
 import { readerCookie } from './reader-cookie';
 import { readCookie } from './stats.service';
 
@@ -53,7 +54,8 @@ export class PublicController {
   @Header('Content-Type', 'text/plain; charset=utf-8')
   robots() {
     const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
-    return `User-agent: *\nDisallow: /admin\nDisallow: /ask\nDisallow: /login\nDisallow: /account\nDisallow: /stripe/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
+    const sitemap = base ? `Sitemap: ${base}/sitemap.xml\n` : '';
+    return `User-agent: *\nDisallow: /admin\nDisallow: /ask\nDisallow: /login\nDisallow: /account\nDisallow: /stripe/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\ntdm-reservation: 1\n\n${aiRobotsGroup()}\n${sitemap}`;
   }
 
   /** Written recaps and public topics, so search engines find them without crawling the index pages. */

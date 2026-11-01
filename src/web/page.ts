@@ -6,6 +6,7 @@ import { BOROUGH_POPULATION, FOUNDING_READERS } from '../referrals';
 import { BODIES, esc, formatDate, hms, isCityBody, meetingParts, shortDate, slugify } from '../util';
 import { reviewVotes, voteProse } from '../analysis/votes';
 import { boardVoters } from './board-members';
+import { AI_ROBOTS_CONTENT, TDM_RESERVATION } from './ai-opt-out';
 import { topicSearchScript, topicTools } from './topic-search';
 
 export { slugify };
@@ -428,7 +429,8 @@ function seoTags(title: string, seo: Seo): string {
   const url = seo.canonical && base ? `${base}${seo.canonical}` : '';
   const tags = [
     seo.description ? `<meta name="description" content="${esc(seo.description)}">` : '',
-    seo.noindex ? '<meta name="robots" content="noindex">' : '',
+    `<meta name="robots" content="${seo.noindex ? `noindex, ${AI_ROBOTS_CONTENT}` : AI_ROBOTS_CONTENT}">`,
+    `<meta name="tdm-reservation" content="${TDM_RESERVATION}">`,
     url ? `<link rel="canonical" href="${esc(url)}">` : '',
     `<meta property="og:site_name" content="${esc(config.newsletterName)}">`,
     `<meta property="og:title" content="${esc(title)}">`,

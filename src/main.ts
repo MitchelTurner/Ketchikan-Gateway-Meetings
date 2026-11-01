@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { config } from './config';
+import { refuseAiCrawlers } from './web/ai-opt-out';
 import { forceHttps } from './web/https';
 import { HtmlExceptionFilter } from './web/http-exception.filter';
 import { StatsService } from './web/stats.service';
@@ -24,6 +25,7 @@ async function bootstrap() {
   // Express treats every request as http and a redirect can loop.
   app.set('trust proxy', 1);
   app.use(forceHttps(publicHttpsBase));
+  app.use(refuseAiCrawlers);
   app.useGlobalFilters(new HtmlExceptionFilter());
   app.use(app.get(StatsService).middleware());
   app.enableShutdownHooks();
