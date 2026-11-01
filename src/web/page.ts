@@ -323,9 +323,10 @@ a.hit:hover h2{color:var(--teal)}
 .app-card{margin:8px 0 0;padding:36px 0 4px;border-top:1px solid var(--line)}
 .app-card h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
 .app-card > p{font:400 16px/1.55 var(--sans);color:var(--text-2);margin:0}
-.app-card .actions{display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:320px}
-.app-card button{margin:0;width:100%}
-.app-card button.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-2)}
+.app-card .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;align-items:center}
+.app-card button{margin:0;width:auto;min-height:46px;padding:14px 18px;border:1px solid transparent}
+.app-card button.ghost{background:transparent;color:var(--text-2);border-color:var(--line-2)}
+.app-card button.ghost:hover{opacity:1;border-color:var(--teal);color:var(--text)}
 .app-card fieldset{margin-top:16px}
 .app-card .hint{margin-top:12px}
 
@@ -353,8 +354,6 @@ footer.site .where{margin-top:2px;font:400 12.5px/1.4 var(--mono);letter-spacing
   .search button{width:auto}
   .callout form{flex-direction:row}
   .callout button{width:auto;padding:0 22px}
-  .app-card .actions{flex-direction:row;max-width:none}
-  .app-card button{width:auto;padding:0 18px}
   .transcript p{grid-template-columns:76px minmax(0,1fr);gap:12px}
   .kit{padding:28px;border-radius:20px}
 }
