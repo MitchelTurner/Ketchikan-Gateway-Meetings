@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Header, Logger, Param, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { capFor } from '../ask/ask-logic';
+import { ASK_PLAN_LABEL, capFor } from '../ask/ask-logic';
 import { BillingService, publicBillingError } from '../ask/billing.service';
 import { AskService } from '../ask/ask.service';
 import { config } from '../config';
@@ -22,7 +22,7 @@ const ACCOUNT_FLASH: Record<string, string> = {
   saved: 'Name saved. It shows on comments.',
   name: 'Use 2 to 40 letters. That name is what other readers see.',
   pending: 'Stripe is confirming the payment. Refresh in a moment.',
-  paid: "You're on the $5 plan.",
+  paid: `You're on the ${ASK_PLAN_LABEL}.`,
   'pay-failed': "That didn't open. Try again in a minute.",
 };
 

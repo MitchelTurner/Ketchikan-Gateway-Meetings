@@ -1,7 +1,9 @@
-/** Included questions each Alaska month for a confirmed reader, and for someone paying $5 a month. */
+/** Included questions each Alaska month for a confirmed reader, and for someone paying $10 a month. */
 export const ASK_FREE_PER_MONTH = 3;
 export const ASK_PAID_PER_MONTH = 20;
-export const ASK_PRICE_LABEL = '$5 a month';
+export const ASK_PRICE_LABEL = '$10 a month';
+/** Short form for “You're on the $10 plan.” */
+export const ASK_PLAN_LABEL = '$10 plan';
 
 const STOP = new Set([
   'the', 'and', 'for', 'that', 'this', 'with', 'from', 'what', 'when', 'where', 'who', 'why', 'how', 'did', 'does', 'was', 'were',

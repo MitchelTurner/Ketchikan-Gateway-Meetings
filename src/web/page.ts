@@ -6,6 +6,7 @@ import { BOROUGH_POPULATION, FOUNDING_READERS } from '../referrals';
 import { BODIES, esc, formatDate, hms, isCityBody, meetingParts, shortDate, slugify } from '../util';
 import { reviewVotes, voteProse } from '../analysis/votes';
 import { boardVoters } from './board-members';
+import { ASK_PLAN_LABEL, ASK_PRICE_LABEL } from '../ask/ask-logic';
 import { AI_ROBOTS_CONTENT, TDM_RESERVATION } from './ai-opt-out';
 import { topicSearchScript, topicTools } from './topic-search';
 
@@ -829,7 +830,7 @@ export function askPage(v: AskPageModel): string {
       : '';
   const upgrade =
     v.signedIn && !v.paid && v.billing
-      ? `<div class="pay"><h2>20 questions a month</h2><p>$5 a month. The recaps stay free. Cancel anytime.</p><form method="post" action="/ask/checkout"><button type="submit">Continue to payment</button></form></div>`
+      ? `<div class="pay"><h2>20 questions a month</h2><p>${ASK_PRICE_LABEL}. The recaps stay free. Cancel anytime.</p><form method="post" action="/ask/checkout"><button type="submit">Continue to payment</button></form></div>`
       : '';
   const manage =
     v.signedIn && v.paid && v.billing
@@ -837,9 +838,9 @@ export function askPage(v: AskPageModel): string {
       : '';
   const accountLink = `<p class="hint"><a href="/account">Your account</a> has invoices, the subscription, and the name on comments.</p>`;
   const signOut = v.signedIn ? `<form method="post" action="/ask/out"><button type="submit" class="linkish">Not you?</button></form>` : '';
-  const quota = `${v.left === 0 ? `You've used this month's ${v.cap} question${v.cap === 1 ? '' : 's'}.` : `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`}${v.paid ? ' You\'re on the $5 plan.' : ''}`;
+  const quota = `${v.left === 0 ? `You've used this month's ${v.cap} question${v.cap === 1 ? '' : 's'}.` : `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`}${v.paid ? ` You're on the ${ASK_PLAN_LABEL}.` : ''}`;
   const status = !v.signedIn
-    ? `<p class="lede">Create an account or sign in. A few questions a month are free. $5 a month raises that to 20. The same account is how you comment on a recap.</p>
+    ? `<p class="lede">Create an account or sign in. A few questions a month are free. ${ASK_PRICE_LABEL} raises that to 20. The same account is how you comment on a recap.</p>
 ${pinNote}<form method="post" action="/ask/link"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">${pinField}<button type="submit">Email me a link</button></form>
 <p class="hint">A new address confirms first, and that creates the account. The link signs this browser in. Recaps stay free.</p>`
     : !v.ready
@@ -870,7 +871,7 @@ function loginIntent(next: string): { title: string; lede: string; focus: 'comme
   }
   return {
     title: 'Create an account',
-    lede: 'One email for comments and for the $5 subscription. A new address creates the account. The same form signs you in.',
+    lede: `One email for comments and for the ${ASK_PRICE_LABEL} subscription. A new address creates the account. The same form signs you in.`,
     focus: '',
   };
 }
@@ -884,7 +885,7 @@ export function loginPage(opts: { next: string; flash?: string }): string {
 <p class="lede">${esc(intent.lede)}</p>
 <div class="reasons">
 <div class="pay${on('comment')}"><p class="kicker">Comments</p><h2>Post under your name</h2><p>The name is public. The email stays private.</p></div>
-<div class="pay${on('ask')}"><p class="kicker">Subscription</p><h2>$5 a month</h2><p>20 questions. Recaps stay free. Cancel anytime.</p></div>
+<div class="pay${on('ask')}"><p class="kicker">Subscription</p><h2>${ASK_PRICE_LABEL}</h2><p>20 questions. Recaps stay free. Cancel anytime.</p></div>
 </div>
 <form method="post" action="/login"><input type="hidden" name="next" value="${esc(opts.next)}">
 <label for="email">Email</label>
@@ -912,10 +913,10 @@ export function accountPage(v: AccountPageModel): string {
   const quota = `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`;
   const pay =
     v.billing && !v.paid
-      ? `<div class="pay"><h2>$5 a month</h2><p>20 questions. Recaps stay free. Cancel anytime.</p><form method="post" action="/account/checkout"><button type="submit">Continue to payment</button></form></div>`
+      ? `<div class="pay"><h2>${ASK_PRICE_LABEL}</h2><p>20 questions. Recaps stay free. Cancel anytime.</p><form method="post" action="/account/checkout"><button type="submit">Continue to payment</button></form></div>`
       : '';
   const paid = v.paid
-    ? `<div class="pay"><h2>You're on the $5 plan</h2><p>${esc(quota)} Canceling stops at the end of the month already paid for.</p></div>`
+    ? `<div class="pay"><h2>You're on the ${ASK_PLAN_LABEL}</h2><p>${esc(quota)} Canceling stops at the end of the month already paid for.</p></div>`
     : '';
   const invoices = v.billing && v.hasCustomer
     ? `<form method="post" action="/account/portal"><button type="submit">Invoices and subscription</button></form>
@@ -1448,7 +1449,7 @@ const METHOD = `<ol class="method">
 <li><b>Checked</b>Names and item numbers against the published roster and agenda, with context from local news.</li>
 <li><b>Sent</b>It goes on the site, and out by email and phone, as soon as it's written.</li>
 </ol>
-<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself. The Ask tab uses those same recaps. Subscribers get 3 questions a month. $5 a month raises that to 20.</p>`;
+<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself. The Ask tab uses those same recaps. Subscribers get 3 questions a month. ${ASK_PRICE_LABEL} raises that to 20.</p>`;
 
 export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null, coming: ComingGroup[] = []) => {
   // Lead with the newest written recap; fall back to a docket headline so the page is never empty.

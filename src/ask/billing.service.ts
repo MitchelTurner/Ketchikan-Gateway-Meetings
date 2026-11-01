@@ -17,7 +17,7 @@ export class BillingService {
     return (this.client ??= new Stripe(config.stripeSecretKey, { apiVersion: '2026-09-30.endive' }));
   }
 
-  /** Stripe Checkout for the $5 monthly price. An active subscriber goes to the portal instead. */
+  /** Stripe Checkout for the $10 monthly price. An active subscriber goes to the portal instead. */
   async checkoutUrl(subscriberId: string, back: '/ask' | '/account' = '/ask'): Promise<string> {
     const reader = await this.prisma.subscriber.findUnique({ where: { id: subscriberId } });
     if (!reader) throw new Error('No reader');
