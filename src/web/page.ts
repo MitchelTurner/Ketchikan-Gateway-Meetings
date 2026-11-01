@@ -818,27 +818,28 @@ export function askPage(v: AskPageModel): string {
     : '';
   const pinField = v.pinId ? `<input type="hidden" name="meeting" value="${esc(v.pinId)}">` : '';
   const form =
-    v.signedIn && v.ready && v.left > 0
+    v.paid && v.ready && v.left > 0
       ? `<form method="post" action="/ask"><label for="question">Your question</label><textarea id="question" name="question" required maxlength="500" placeholder="What did the Assembly decide about the harbor?" style="min-height:120px"></textarea>${pinField}<button type="submit">Ask</button></form>`
       : '';
-  const upgrade =
-    v.signedIn && !v.paid && v.billing
-      ? `<div class="pay"><h2>20 questions a month</h2><p>${ASK_PRICE_LABEL}. The recaps stay free. Cancel anytime.</p><form method="post" action="/ask/checkout"><button type="submit">Continue to payment</button></form></div>`
-      : '';
+  const upgrade = `<div class="pay"><h2>20 questions a month</h2><p>Questions need the ${ASK_PRICE_LABEL} plan. The recaps stay free. Cancel anytime.</p><form method="post" action="/ask/checkout"><button type="submit">Continue to payment</button></form></div>`;
   const manage =
-    v.signedIn && v.paid && v.billing
+    v.paid && v.billing
       ? `<form method="post" action="/ask/portal"><button type="submit" class="linkish">Invoices and subscription</button></form>`
       : '';
   const accountLink = `<p class="hint"><a href="/account">Your account</a> has invoices, the subscription, and the name on comments.</p>`;
   const signOut = v.signedIn ? `<form method="post" action="/ask/out"><button type="submit" class="linkish">Not you?</button></form>` : '';
-  const quota = `${v.left === 0 ? `You've used this month's ${v.cap} question${v.cap === 1 ? '' : 's'}.` : `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`}${v.paid ? ` You're on the ${ASK_PLAN_LABEL}.` : ''}`;
+  const quota = v.left === 0
+    ? `You've used this month's ${v.cap} questions. You're on the ${ASK_PLAN_LABEL}.`
+    : `${v.left} of ${v.cap} questions left this month. You're on the ${ASK_PLAN_LABEL}.`;
   const status = !v.signedIn
-    ? `<p class="lede">Create an account or sign in. A few questions a month are free. ${ASK_PRICE_LABEL} raises that to 20. The same account is how you comment on a recap.</p>
+    ? `<p class="lede">Create an account or sign in. Questions are ${ASK_PRICE_LABEL}: 20 a month. The same account is how you comment on a recap. Recaps stay free.</p>
 ${pinNote}<form method="post" action="/ask/link"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">${pinField}<button type="submit">Email me a link</button></form>
 <p class="hint">A new address confirms first, and that creates the account. The link signs this browser in. Recaps stay free.</p>`
     : !v.ready
       ? `<p>Questions aren't available yet.</p>${accountLink}${signOut}`
-      : `<p class="ask-left">${quota}</p>${pinNote}${upgrade}${form}${manage}${accountLink}${signOut}`;
+      : !v.paid
+        ? `${pinNote}${v.billing ? upgrade : `<p>Questions need the ${ASK_PRICE_LABEL} plan. Payment isn't set up on this site yet.</p>`}${accountLink}${signOut}`
+        : `<p class="ask-left">${quota}</p>${pinNote}${form}${manage}${accountLink}${signOut}`;
   return page(
     'Ask',
     `${v.flash ? `<p class="flash">${esc(v.flash)}</p>` : ''}<h1>Ask about a meeting</h1>${status}${turns ? `<div class="turns">${turns}</div>` : ''}`,
@@ -858,7 +859,7 @@ function loginIntent(next: string): { title: string; lede: string; focus: 'comme
   if (next === '/ask' || next.startsWith('/ask?')) {
     return {
       title: 'Sign in to ask',
-      lede: 'Create an account or sign in with your email. A few questions a month are free.',
+      lede: `Create an account or sign in with your email. Questions are ${ASK_PRICE_LABEL}.`,
       focus: 'ask',
     };
   }
@@ -925,7 +926,7 @@ export function accountPage(v: AccountPageModel): string {
 <input id="name" type="text" name="displayName" required maxlength="40" autocomplete="nickname" value="${esc(v.displayName)}" placeholder="Harbor">
 <button type="submit">Save name</button></form>
 <h2 class="section">Subscription</h2>
-<p>${v.paid ? '' : `${esc(quota)} `}<a href="/ask">Ask about a meeting</a></p>
+<p>${v.paid ? '' : `Questions are the ${ASK_PRICE_LABEL} plan. `}<a href="/ask">Ask about a meeting</a></p>
 ${paid}${pay}${invoices}
 <form method="post" action="/account/out"><button type="submit" class="linkish">Log out</button></form>`,
     true,
@@ -1469,7 +1470,7 @@ const METHOD = `<ol class="method">
 <li><b>Checked</b>Names and item numbers against the published roster and agenda, with context from local news.</li>
 <li><b>Sent</b>It goes on the site, and out by email and phone, as soon as it's written.</li>
 </ol>
-<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself. The Ask tab uses those same recaps. Subscribers get 3 questions a month. ${ASK_PRICE_LABEL} raises that to 20.</p>
+<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself. The Ask tab uses those same recaps. Questions are ${ASK_PRICE_LABEL}: 20 a month. Recaps stay free.</p>
 <p class="aside-note"><a href="/about">About this project</a> · <a href="/boards">Boards and meeting times</a> · <a href="/testify">How to speak at a meeting</a></p>`;
 
 export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null, coming: ComingGroup[] = []) => {

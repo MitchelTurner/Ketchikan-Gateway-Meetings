@@ -4,6 +4,7 @@ import { cleanDisplayName, safeNext } from '../account/account-logic';
 import type { Request, Response } from 'express';
 import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { emptyRecording } from '../analysis/empty-recording';
+import { ASK_PRICE_LABEL } from '../ask/ask-logic';
 import { config } from '../config';
 import { confirmEmail, confirmExpiresAt, confirmStillOpen, CONFIRM_HOURS } from '../email/confirm';
 import { EmailService } from '../email/email.service';
@@ -563,7 +564,7 @@ export class PublicController {
       'Subscribed',
       `<h1>You're subscribed</h1>${stepList(3)}
 <div class="reader-no"><span>You are reader</span><strong>#${readerNo.toLocaleString('en-US')}</strong><span>of ${esc(config.newsletterName)}</span></div>
-<p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a>, <a href="/ask">ask about a meeting</a>, or <a href="/account">open your account</a>. Three questions a month are included.</p>
+<p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a> or <a href="/account">open your account</a>. <a href="/ask">Questions about a meeting</a> are ${ASK_PRICE_LABEL}.</p>
 ${go}
 ${await this.kit(sub)}`,
       true,

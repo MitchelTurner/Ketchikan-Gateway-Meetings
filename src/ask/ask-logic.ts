@@ -1,5 +1,5 @@
-/** Included questions each Alaska month for a confirmed reader, and for someone paying $10 a month. */
-export const ASK_FREE_PER_MONTH = 3;
+/** Questions require the $10 plan. An unpaid reader gets none. */
+export const ASK_FREE_PER_MONTH = 0;
 export const ASK_PAID_PER_MONTH = 20;
 export const ASK_PRICE_LABEL = '$10 a month';
 /** Short form for “You're on the $10 plan.” */

@@ -46,6 +46,7 @@ const FORMAT = {
 };
 
 export class AskLimitError extends Error {}
+export class AskPaywallError extends Error {}
 export class AskUnavailableError extends Error {}
 
 @Injectable()
@@ -64,13 +65,13 @@ export class AskService {
     });
   }
 
-  /** Writes one answer. Throws when the month is used up or Claude is not configured. Does not email anyone. */
+  /** Writes one answer. Throws when the reader is not paid, the month is used up, or Claude is not configured. Does not email anyone. */
   async ask(subscriberId: string, question: string, pinId: string | null): Promise<void> {
     if (!config.askReady) throw new AskUnavailableError();
     const reader = await this.prisma.subscriber.findUnique({ where: { id: subscriberId } });
     if (!reader || !sessionOpen(reader)) throw new AskUnavailableError();
-    const paid = reader.askAccess === 'paid';
-    const cap = capFor(paid);
+    if (reader.askAccess !== 'paid') throw new AskPaywallError();
+    const cap = capFor(true);
     const used = await this.usedThisMonth(subscriberId);
     if (used >= cap) throw new AskLimitError();
     const cards = await this.cards(pinId);

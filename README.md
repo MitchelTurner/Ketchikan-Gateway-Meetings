@@ -115,13 +115,13 @@ The archive check runs when the server starts, not only on the 3-hour schedule. 
 
 ## Ask
 
-`/ask` answers a question from the published recaps. The recaps stay free. A confirmed reader gets 3 questions each Alaska month. **$10 a month** raises that to 20. Each answer names the meeting and, when it can, the timestamp. It says it can be wrong.
+`/ask` answers a question from the published recaps. The recaps stay free. Asking a question requires the **$10 a month** plan, which covers 20 questions each Alaska month. Each answer names the meeting and, when it can, the timestamp. It says it can be wrong.
 
 The reader signs in with a one-time link (`/login`, or the email field on `/ask`). A new address gets the confirmation letter, and confirming creates the account. Checkout is Stripe (`mode: subscription`). Access changes only from the webhook at `/stripe/webhook`, not from the page they land on after paying.
 
-`/account` is where a signed-in reader sets the name shown on comments, sees the question count, and opens invoices. The first "Invoices and subscription" click creates a Stripe Customer Portal configuration with invoice history, card updates, and cancel-at-period-end. Hosted portal login stays off. The restricted key needs permission to write portal configurations as well as portal sessions.
+`/account` is where a signed-in reader sets the name shown on comments, sees how many questions the $10 plan has left, and opens invoices. The first "Invoices and subscription" click creates a Stripe Customer Portal configuration with invoice history, card updates, and cancel-at-period-end. Hosted portal login stays off. The restricted key needs permission to write portal configurations as well as portal sessions.
 
-Set `STRIPE_SECRET_KEY` (a restricted key), `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` for the $10 monthly price. Leave them blank and the 3 free questions still work, once `ANTHROPIC_API_KEY` is set. Sales tax is not collected. Turn on Stripe Tax only after you have an active registration. See [Collect taxes for recurring payments](https://docs.stripe.com/billing/taxes/collect-taxes.md).
+Set `STRIPE_SECRET_KEY` (a restricted key), `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` for the $10 monthly price, plus `ANTHROPIC_API_KEY`. Leave the Stripe keys blank and Ask stays closed: nobody can pay, so nobody can ask. Sales tax is not collected. Turn on Stripe Tax only after you have an active registration. See [Collect taxes for recurring payments](https://docs.stripe.com/billing/taxes/collect-taxes.md).
 
 Comments sit on each recap. A signed-in reader needs a display name first. The email address is not published. Eight comments a day.
 

@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma.service';
 import { postedFromHere } from '../web/https';
 import { readerCookie } from '../web/reader-cookie';
 import { AskPageModel, askPage, AskTurnView } from '../web/page';
-import { AskLimitError, AskService, AskUnavailableError } from './ask.service';
+import { AskLimitError, AskPaywallError, AskService, AskUnavailableError } from './ask.service';
 import { ASK_PRICE_LABEL, capFor } from './ask-logic';
 import { BillingService, publicBillingError } from './billing.service';
 
@@ -16,10 +16,11 @@ const FLASH: Record<string, string> = {
   link: 'Check your inbox. The link signs this browser in.',
   'link-failed': "The email didn't send. Try again in a minute.",
   cap: "You've used this month's questions.",
+  pay: `Asking a question is the ${ASK_PRICE_LABEL} plan.`,
   failed: "That question didn't get an answer. Try again in a minute.",
   empty: 'Write a question first.',
   pending: 'Stripe is confirming the payment. Refresh in a moment.',
-  paid: `You're in. ${ASK_PRICE_LABEL} covers more questions.`,
+  paid: `You're in. ${ASK_PRICE_LABEL} covers 20 questions.`,
   'pay-failed': "Payment didn't open. Try again in a minute.",
   'bad-link': "That link didn't work. Ask for a new one.",
 };
@@ -109,8 +110,10 @@ export class AskController {
     try {
       await this.ask.ask(reader.id, question, meeting);
     } catch (err) {
-      const done = err instanceof AskLimitError ? 'cap' : 'failed';
-      if (!(err instanceof AskLimitError) && !(err instanceof AskUnavailableError)) this.log.warn(`Ask failed: ${publicBillingError(err)}`);
+      const done = err instanceof AskPaywallError ? 'pay' : err instanceof AskLimitError ? 'cap' : 'failed';
+      if (!(err instanceof AskLimitError) && !(err instanceof AskPaywallError) && !(err instanceof AskUnavailableError)) {
+        this.log.warn(`Ask failed: ${publicBillingError(err)}`);
+      }
       return res.redirect(303, `/ask${meeting ? `?m=${encodeURIComponent(meeting)}&` : '?'}done=${done}`);
     }
     res.redirect(303, meeting ? `/ask?m=${encodeURIComponent(meeting)}` : '/ask');

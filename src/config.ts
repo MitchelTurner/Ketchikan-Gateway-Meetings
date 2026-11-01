@@ -118,7 +118,7 @@ export const config = {
         process.env.PUBLIC_BASE_URL,
     );
   },
-  /** Restricted key (rk_) preferred. Missing keys leave paid Ask off; the free questions still work. */
+  /** Restricted key (rk_) preferred. Questions require a paid subscription, so missing keys leave Ask closed. */
   get stripeSecretKey() { return stripeValue('STRIPE_SECRET_KEY'); },
   get stripeWebhookSecret() { return stripeValue('STRIPE_WEBHOOK_SECRET'); },
   get stripePriceId() { return stripeValue('STRIPE_PRICE_ID'); },
