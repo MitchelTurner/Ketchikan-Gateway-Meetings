@@ -113,7 +113,7 @@ export class AskController {
       if (!(err instanceof AskLimitError) && !(err instanceof AskUnavailableError)) this.log.warn(`Ask failed: ${publicBillingError(err)}`);
       return res.redirect(303, `/ask${meeting ? `?m=${encodeURIComponent(meeting)}&` : '?'}done=${done}`);
     }
-    res.redirect(303, '/ask');
+    res.redirect(303, meeting ? `/ask?m=${encodeURIComponent(meeting)}` : '/ask');
   }
 
   @Post('stripe/webhook')

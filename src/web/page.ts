@@ -1210,7 +1210,9 @@ export function comingDate(when: string, meeting: Date | null): Date | null {
     year = base.getUTCFullYear();
     if (meeting && Date.UTC(year, month, day) < Date.UTC(meeting.getUTCFullYear(), meeting.getUTCMonth(), meeting.getUTCDate())) year += 1;
   }
-  return new Date(Date.UTC(year, month, day, 12));
+  const at = new Date(Date.UTC(year, month, day, 12));
+  if (at.getUTCFullYear() !== year || at.getUTCMonth() !== month || at.getUTCDate() !== day) return null;
+  return at;
 }
 
 /** "6pm" or "6:30pm". Empty when the line names no clock time. */

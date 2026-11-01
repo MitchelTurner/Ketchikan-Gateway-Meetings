@@ -79,7 +79,7 @@ export class AskService {
     const allowed = new Set(picked.map((card) => card.id));
     const res = await this.anthropic.messages.create({
       model: config.anthropicModel,
-      max_tokens: 1200,
+      max_tokens: 4096,
       system: SYSTEM,
       output_config: { effort: 'low', format: FORMAT },
       messages: [{ role: 'user', content: `<recaps>\n${picked.map(recapExcerpt).join('\n\n')}\n</recaps>\n\nQuestion: ${question}` }],
@@ -89,7 +89,11 @@ export class AskService {
       .map((block) => block.text)
       .join('');
     const parsed = parseAskAnswer(text, allowed);
-    if (!parsed) throw new AskUnavailableError();
+    if (!parsed) {
+      const kinds = res.content.map((block) => block.type).join(',') || 'empty';
+      this.log.warn(`Ask answer was not usable (${res.stop_reason || 'no stop reason'}, ${kinds})`);
+      throw new AskUnavailableError();
+    }
     const byId = new Map(picked.map((card) => [card.id, card]));
     const sources = parsed.cites.flatMap((cite) => {
       const card = byId.get(cite.meetingId);

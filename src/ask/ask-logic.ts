@@ -167,23 +167,52 @@ export interface AskCite {
   t: number;
 }
 
+/** The first JSON object in a model reply, including one wrapped in prose or a fence. */
+function parseJsonObject(raw: string): unknown {
+  const text = raw.replace(/^\uFEFF/, '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* fall through and cut out the object */
+  }
+  const start = text.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /** Claude's JSON, limited to meetings we actually handed it. */
 export function parseAskAnswer(raw: string, allowed: Set<string>): { answer: string; cites: AskCite[] } | null {
-  const text = raw
-    .trim()
-    .replace(/^```(?:json)?/i, '')
-    .replace(/```$/i, '')
-    .trim();
-  let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    return null;
-  }
+  const data = parseJsonObject(raw);
   if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const row = data as { answer?: unknown; cites?: unknown };
   const answer = typeof row.answer === 'string' ? row.answer.trim() : '';
-  if (!answer || answer.length > 4000) return null;
+  if (!answer) return null;
+  const clipped = answer.length > 4000 ? `${answer.slice(0, 3999).trimEnd()}…` : answer;
   const cites = Array.isArray(row.cites) ? row.cites : [];
   const clean: AskCite[] = [];
   for (const cite of cites) {
@@ -196,7 +225,7 @@ export function parseAskAnswer(raw: string, allowed: Set<string>): { answer: str
     clean.push({ meetingId, t: seconds });
     if (clean.length >= 6) break;
   }
-  return { answer, cites: clean };
+  return { answer: clipped, cites: clean };
 }
 
 export function invoiceSubscriptionId(invoice: {

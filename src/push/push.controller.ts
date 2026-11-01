@@ -40,9 +40,13 @@ self.addEventListener('notificationclick', function(event) {
     var parsed = new URL(raw, self.location.origin);
     if (parsed.origin === self.location.origin) url = parsed.pathname + parsed.search + parsed.hash;
   } catch (e) {}
+  var target = new URL(url, self.location.origin);
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list) {
     for (var i = 0; i < list.length; i++) {
-      if (list[i].url.indexOf(url) !== -1 && list[i].focus) return list[i].focus();
+      try {
+        var open = new URL(list[i].url);
+        if (open.origin === target.origin && open.pathname === target.pathname && list[i].focus) return list[i].focus();
+      } catch (err) {}
     }
     if (self.clients.openWindow) return self.clients.openWindow(url);
   }));
