@@ -124,13 +124,34 @@ model Subscriber {
   referredById String? // the reader whose invite link they signed up through
   referredBy   Subscriber?  @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
   referrals    Subscriber[] @relation("Referrals")
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?
+  /** free, or paid while the Stripe subscription is active and not revoked. */
+  askAccess            String    @default("free")
+  /** Subscription id whose payment was refunded, disputed, or flagged. That id cannot turn Ask back on. */
+  askBlockedSubId      String?
+  askLinkSentAt        DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   sends       EmailSend[]
   topicSends  TopicSend[]
+  asks        AskTurn[]
 
   @@index([referredById])
   @@index([refCode])
+}
+
+/** One question a reader asked, and the answer written from published recaps. */
+model AskTurn {
+  id           String     @id @default(cuid())
+  subscriberId String
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  question     String
+  answer       String
+  sources      Json
+  createdAt    DateTime   @default(now())
+
+  @@index([subscriberId, createdAt])
 }
 
 enum TopicStatus {

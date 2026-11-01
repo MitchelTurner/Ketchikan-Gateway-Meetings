@@ -113,6 +113,15 @@ export const config = {
         process.env.PUBLIC_BASE_URL,
     );
   },
+  /** Restricted key (rk_) preferred. Missing keys leave paid Ask off; the free questions still work. */
+  get stripeSecretKey() { return process.env.STRIPE_SECRET_KEY || ''; },
+  get stripeWebhookSecret() { return process.env.STRIPE_WEBHOOK_SECRET || ''; },
+  get stripePriceId() { return process.env.STRIPE_PRICE_ID || ''; },
+  /** Checkout, the customer portal, and the webhook. Tax is not turned on here. */
+  get askBillingReady() {
+    return Boolean(this.stripeSecretKey && this.stripeWebhookSecret && this.stripePriceId && process.env.PUBLIC_BASE_URL);
+  },
+  get askReady() { return Boolean(process.env.ANTHROPIC_API_KEY); },
 
   // Security
   get adminToken() { return req('ADMIN_TOKEN'); },

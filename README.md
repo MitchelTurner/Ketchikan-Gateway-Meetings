@@ -111,8 +111,16 @@ Resend can stay unset while you check a transcript. The meeting lands on `AWAITI
 
 The archive check runs when the server starts, not only on the 3-hour schedule. It also reads the City of Ketchikan YouTube channel (`CITY_YOUTUBE_URL`). Meetings in the processing window that stopped early (a deploy resets the in-container queue) are queued again, including ones that already have a transcript but never got a recap. Download and transcription are skipped when those stages are already saved.
 
+## Ask
+
+`/ask` answers a question from the published recaps. The recaps stay free. A confirmed reader gets 3 questions each Alaska month. **$5 a month** raises that to 20. Each answer names the meeting and, when it can, the timestamp. It says it can be wrong.
+
+The reader signs in with the link emailed to the address they subscribed with (or by confirming, which sets the same cookie). Checkout is Stripe (`mode: subscription`). Access changes only from the webhook at `/stripe/webhook`, not from the page they land on after paying. Cancel and card updates use the Stripe customer portal.
+
+Set `STRIPE_SECRET_KEY` (a restricted key), `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` for the $5 monthly price. Leave them blank and the 3 free questions still work, once `ANTHROPIC_API_KEY` is set. Sales tax is not collected. Turn on Stripe Tax only after you have an active registration. See [Collect taxes for recurring payments](https://docs.stripe.com/billing/taxes/collect-taxes.md).
+
 ## Costs (rough, per 3-hour meeting)
-AssemblyAI ≈ $0.45–1.10 depending on model · Claude Sonnet ≈ $0.30–0.60 (≈60–90k input tokens) · research ≈ $0.10–0.40 (up to 12 web searches at $10/1,000, plus fetched pages) · Resend free tier covers 3,000 emails/month.
+AssemblyAI ≈ $0.45–1.10 depending on model · Claude Sonnet ≈ $0.30–0.60 (≈60–90k input tokens) · research ≈ $0.10–0.40 (up to 12 web searches at $10/1,000, plus fetched pages) · one Ask question is a few cents · Resend free tier covers 3,000 emails/month.
 
 ## Things to know
 - **Borough site:** the archive page embeds a Granicus publisher (`ViewPublisher.php`). Discovery follows that frame, stores each clip's MediaPlayer link, and downloads the meeting MP3 (not the multi-gigabyte MP4). Meetings older than `PROCESS_SINCE` are recorded as `SKIPPED` and are not transcribed. The Borough robots.txt blocks some automated fetchers; this checks the archive every 3 hours with an identifying user agent.

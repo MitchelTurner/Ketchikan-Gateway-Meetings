@@ -26,6 +26,7 @@
     "reflect-metadata": "^0.2.2",
     "resend": "^6.34.0",
     "rxjs": "^7.8.2",
+    "stripe": "^23.0.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

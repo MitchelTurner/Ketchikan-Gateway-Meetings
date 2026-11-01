@@ -19,7 +19,7 @@ function publicHttpsBase(): string | null {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   // Railway terminates TLS and forwards the original scheme. Without this,
   // Express treats every request as http and a redirect can loop.
   app.set('trust proxy', 1);

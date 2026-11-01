@@ -16,6 +16,7 @@ import {
   bodyCheckboxes, ComingGroup, comingClock, comingContext, comingDate, comingIsPast, comingWho, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
+import { readerCookie } from './reader-cookie';
 import { readCookie } from './stats.service';
 
 const VALID_BODIES = new Set(BODIES.map((b) => b.name));
@@ -46,7 +47,7 @@ export class PublicController {
   @Header('Content-Type', 'text/plain; charset=utf-8')
   robots() {
     const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
-    return `User-agent: *\nDisallow: /admin\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
+    return `User-agent: *\nDisallow: /admin\nDisallow: /ask\nDisallow: /stripe/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
   }
 
   /** Written recaps and public topics, so search engines find them without crawling the index pages. */
@@ -494,11 +495,12 @@ export class PublicController {
     }
     const readerNo = await readerNumber(this.prisma, sub.confirmedAt!);
     rememberSignup(res, req, true);
+    res.append('Set-Cookie', readerCookie(req, sub.token));
     return page(
       'Subscribed',
       `<h1>You're subscribed</h1>${stepList(3)}
 <div class="reader-no"><span>You are reader</span><strong>#${readerNo.toLocaleString('en-US')}</strong><span>of ${esc(config.newsletterName)}</span></div>
-<p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a>.</p>
+<p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a>, or <a href="/ask">ask about a meeting</a>. Three questions a month are included.</p>
 ${await this.kit(sub)}${signupRemember(true)}`,
       true,
     );
@@ -556,6 +558,7 @@ ${await this.kit(sub)}${signupRemember(true)}`,
   async unsubscribe(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.prisma.subscriber.updateMany({ where: { token }, data: { status: 'UNSUBSCRIBED' } });
     rememberSignup(res, req, false);
+    res.append('Set-Cookie', readerCookie(req, ''));
     return page('Unsubscribed', `<h1>You're unsubscribed</h1><p>You won't get any more recaps. <a href="/">Changed your mind?</a></p>${signupRemember(false)}`);
   }
 
@@ -566,9 +569,10 @@ ${await this.kit(sub)}${signupRemember(true)}`,
     if (!sub) return page('Not found', `<h1>That link didn't work</h1>`);
     const on = sub.status !== 'UNSUBSCRIBED';
     if (on) rememberSignup(res, req, true);
+    if (sub.status === 'CONFIRMED') res.append('Set-Cookie', readerCookie(req, sub.token));
     return page(
       'Your email',
-      `<h1>Your subscription</h1>${sub.status === 'CONFIRMED' ? await this.kit(sub) : ''}<h2 class="section">What you get</h2><form method="post" action="/preferences/${esc(token)}">
+      `<h1>Your subscription</h1>${sub.status === 'CONFIRMED' ? await this.kit(sub) : ''}${sub.status === 'CONFIRMED' ? '<p><a href="/ask">Ask about a meeting</a></p>' : ''}<h2 class="section">What you get</h2><form method="post" action="/preferences/${esc(token)}">
 <label class="check" style="display:flex;gap:10px;align-items:center;font-size:15px"><input type="checkbox" name="recaps" value="1"${sub.recaps ? ' checked' : ''}> A recap after each meeting</label>
 ${bodyCheckboxes(sub.bodies)}${topicCheckboxes(await this.topicChoices(sub.topics), sub.topics)}<button type="submit">Save</button></form>${on ? signupRemember(true) : ''}`,
       true,

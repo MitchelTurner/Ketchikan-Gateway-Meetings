@@ -94,6 +94,17 @@ p.who span{margin-right:6px;font:600 11px/1 var(--sans);letter-spacing:.04em;tex
 .hint{font:400 13px/1.5 var(--sans);color:var(--muted);margin:10px 0 0}
 button{margin-top:22px;width:100%;padding:15px 18px;font:600 15px/1 var(--sans);letter-spacing:-.01em;color:var(--btn-text);background:var(--btn-bg);border:0;border-radius:12px;cursor:pointer;transition:transform .12s,opacity .15s}
 button:hover{opacity:.9}button:active{transform:translateY(1px)}
+.turns{margin:8px 0 8px}
+.turn{border-top:1px solid var(--line);padding:16px 0}
+.turn .asked{margin:0 0 8px;font:600 16.5px/1.4 var(--sans);letter-spacing:-.015em;color:var(--text)}
+.turn .say{margin:0 0 8px;font:400 16px/1.6 var(--sans)}
+.turn .cites{margin:4px 0 0;font:400 13.5px/1.5 var(--sans)}
+.turn .cites a{color:var(--teal)}
+.ask-left{margin:0 0 14px;font:500 13.5px/1.45 var(--sans);color:var(--text-2)}
+.pay{border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:18px 18px 8px;margin:8px 0 18px}
+.pay h2{font-size:22px;margin:0 0 8px}
+.pay p{margin:0 0 4px;color:var(--text-2)}
+.flash{border:1px solid var(--line-2);border-radius:12px;padding:12px 14px;margin:0 0 16px;font:500 14.5px/1.45 var(--sans);background:var(--surface)}
 
 /* Front page: one column, top to bottom, in the same order as the nav. */
 .hero-band{border-bottom:0}
@@ -340,6 +351,7 @@ const TABS: { key: string; href: string; label: string; paths: string }[] = [
   { key: 'recaps', href: '/notes', label: 'Recaps', paths: '<path d="M7 3.5h7l5 5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z"/><path d="M14 3.5V9h5M9 13h6M9 16.5h6"/>' },
   { key: 'topics', href: '/topics', label: 'Topics', paths: '<path d="M12 3 3.5 8 12 13l8.5-5L12 3z"/><path d="m3.5 12 8.5 5 8.5-5M3.5 16l8.5 5 8.5-5"/>' },
   { key: 'docket', href: '/#docket', label: 'Docket', paths: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10h16"/>' },
+  { key: 'ask', href: '/ask', label: 'Ask', paths: '<path d="M5 6.5h14a1 1 0 0 1 1 1V15a1 1 0 0 1-1 1H9l-4 3.5V16H5a1 1 0 0 1-1-1V7.5a1 1 0 0 1 1-1z"/>' },
   { key: 'subscribe', href: '/#subscribe', label: 'Subscribe', paths: '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m4 7 8 6 8-6"/>' },
 ];
 
@@ -358,6 +370,7 @@ function mark(){
     else if(key==='recaps') on=path==='/notes'||path.indexOf('/notes/')===0;
     else if(key==='topics') on=path==='/topics'||path.indexOf('/topics/')===0;
     else if(key==='docket') on=path.indexOf('/meetings/')===0||(path==='/'&&hash==='#docket');
+    else if(key==='ask') on=path==='/ask'||path.indexOf('/ask/')===0;
     else if(key==='subscribe') on=path==='/'&&hash==='#subscribe';
     if(on) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current');
   });
@@ -374,6 +387,7 @@ function footer(): string {
 <a href="${esc(config.archiveUrl)}">Borough archive</a>
 ${config.cityYoutubeUrl ? `<a href="${esc(config.cityYoutubeUrl)}">City videos</a>` : ''}
 <a href="/#app">Get the app</a>
+<a href="/ask">Ask a question</a>
 <a href="/#subscribe">Get the recap</a>
 </nav>
 <p class="where">Ketchikan · 55.34°N 131.65°W</p>
@@ -483,7 +497,7 @@ ask.addEventListener('close', function() { if (!leaving && state() !== 'on') rem
 if (signed()) { remember('on'); return; }
 if (state() === 'later') return;
 var path = location.pathname;
-if (path === '/subscribe' || path.indexOf('/confirm/') === 0 || path.indexOf('/preferences/') === 0 || path.indexOf('/unsubscribe/') === 0) return;
+if (path === '/subscribe' || path === '/ask' || path.indexOf('/ask/') === 0 || path.indexOf('/confirm/') === 0 || path.indexOf('/preferences/') === 0 || path.indexOf('/unsubscribe/') === 0) return;
 if (location.hash === '#subscribe') return;
 setTimeout(function() {
   if (location.hash === '#subscribe' || state() === 'later' || state() === 'on') return;
@@ -745,6 +759,76 @@ export function page(title: string, inner: string, wide = false, below = ''): st
     `${title} · ${config.newsletterName}`,
     `<main class="wrap" style="max-width:${wide ? '760px' : '560px'}"><div class="sheet">${inner}</div>${below}</main>`,
     { seo: { noindex: true } },
+  );
+}
+
+export interface AskTurnView {
+  question: string;
+  answer: string;
+  sources: { label: string; href: string }[];
+}
+
+export interface AskPageModel {
+  signedIn: boolean;
+  paid: boolean;
+  billing: boolean;
+  ready: boolean;
+  used: number;
+  cap: number;
+  left: number;
+  turns: AskTurnView[];
+  pinId: string;
+  pinHeadline: string;
+  flash?: string;
+}
+
+function answerHtml(text: string): string {
+  return text
+    .split(/\n\s*\n/)
+    .map((part) => `<p class="say">${esc(part.trim()).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+/** Questions over the published recaps. The recaps themselves stay free. */
+export function askPage(v: AskPageModel): string {
+  const turns = v.turns
+    .map(
+      (turn) => `<article class="turn"><p class="asked">${esc(turn.question)}</p>${answerHtml(turn.answer)}${
+        turn.sources.length
+          ? `<p class="cites">${turn.sources.map((source) => `<a href="${esc(source.href)}">${esc(source.label)}</a>`).join(' · ')}</p>`
+          : ''
+      }<p class="hint">This can be wrong. Open the meeting and check the video.</p></article>`,
+    )
+    .join('');
+  const pinNote = v.pinId
+    ? `<p class="ask-left">${v.pinHeadline ? `About “${esc(v.pinHeadline)}”.` : 'About the meeting you opened.'}</p>`
+    : '';
+  const pinField = v.pinId ? `<input type="hidden" name="meeting" value="${esc(v.pinId)}">` : '';
+  const form =
+    v.signedIn && v.ready && v.left > 0
+      ? `<form method="post" action="/ask"><label for="question">Your question</label><textarea id="question" name="question" required maxlength="500" placeholder="What did the Assembly decide about the harbor?" style="min-height:120px"></textarea>${pinField}<button type="submit">Ask</button></form>`
+      : '';
+  const upgrade =
+    v.signedIn && !v.paid && v.billing
+      ? `<div class="pay"><h2>20 questions a month</h2><p>$5 a month. The recaps stay free. Cancel anytime.</p><form method="post" action="/ask/checkout"><button type="submit">Continue to payment</button></form></div>`
+      : '';
+  const manage =
+    v.signedIn && v.paid && v.billing
+      ? `<form method="post" action="/ask/portal"><button type="submit" class="linkish">Manage payment</button></form>`
+      : '';
+  const signOut = v.signedIn ? `<form method="post" action="/ask/out"><button type="submit" class="linkish">Not you?</button></form>` : '';
+  const quota = `${v.left === 0 ? `You've used this month's ${v.cap} question${v.cap === 1 ? '' : 's'}.` : `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`}${v.paid ? ' You\'re on the $5 plan.' : ''}`;
+  const status = !v.signedIn
+    ? `<p class="lede">Confirmed readers can ask a few questions a month. $5 a month raises that to 20. Answers use the recaps on this site, name the meeting, and can be wrong.</p>
+${pinNote}<form method="post" action="/ask/link"><label for="email">Email you subscribed with</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">${pinField}<button type="submit">Email me a link</button></form>
+<p class="hint">No account yet? <a href="/#subscribe">Subscribe</a>. The recaps stay free either way.</p>`
+    : !v.ready
+      ? `<p>Questions aren't available yet.</p>${signOut}`
+      : `<p class="ask-left">${quota}</p>${pinNote}${upgrade}${form}${manage}${signOut}`;
+  return page(
+    'Ask',
+    `${v.flash ? `<p class="flash">${esc(v.flash)}</p>` : ''}<h1>Ask about a meeting</h1>${status}${turns ? `<div class="turns">${turns}</div>` : ''}`,
+    true,
   );
 }
 
@@ -1258,7 +1342,7 @@ const METHOD = `<ol class="method">
 <li><b>Checked</b>Names and item numbers against the published roster and agenda, with context from local news.</li>
 <li><b>Sent</b>It goes on the site, and out by email and phone, as soon as it's written.</li>
 </ol>
-<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself.</p>`;
+<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself. The Ask tab uses those same recaps. Subscribers get 3 questions a month. $5 a month raises that to 20.</p>`;
 
 export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null, coming: ComingGroup[] = []) => {
   // Lead with the newest written recap; fall back to a docket headline so the page is never empty.
@@ -1517,7 +1601,7 @@ ${opts.banner ?? ''}<div class="kicker">${esc(placeBody(meeting.body))}</div>
 <h1>${esc(d.headline)}</h1>
 ${membersLine(meeting.body)}
 ${partsList(meeting.title, meeting.body)}
-<div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span>${updated}<a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a></div>
+<div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span>${updated}<a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a>${opts.draft ? '' : `<a href="/ask?m=${encodeURIComponent(meeting.id)}">Ask about this</a>`}</div>
 ${thanksTop}
 <div class="body">${sections}</div>
 <div class="notice"><strong>How this was made</strong>Written with AI from ${isCityBody(meeting.body) ? "the City of Ketchikan's recording" : "the Borough's recording"} and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>

@@ -49,6 +49,7 @@ function wantsHtml(req: Request): boolean {
   const path = req.path || String(req.url || '').split('?')[0];
   if (path === '/' || path === '/subscribe' || path === '/notes' || path.startsWith('/notes/') || path.startsWith('/topics')) return true;
   if (path.startsWith('/confirm/') || path.startsWith('/unsubscribe/') || path.startsWith('/preferences/')) return true;
+  if (path === '/ask' || path.startsWith('/ask/')) return true;
   if (path === '/admin' || path.startsWith('/admin/posts') || path.startsWith('/admin/log')) return true;
   return /\/admin\/(meetings|dives)\/[^/]+\/(approve|preview|reject)$/.test(path) || /\/admin\/topics/.test(path);
 }
