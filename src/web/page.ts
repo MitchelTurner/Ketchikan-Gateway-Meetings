@@ -198,6 +198,14 @@ button.linkish:hover{opacity:1;text-decoration:underline}
 .notice{margin-top:52px;padding:22px 24px;border:1px solid var(--line);border-radius:16px;background:var(--surface);font:400 14.5px/1.65 var(--sans);color:var(--text-2)}
 .notice strong{display:block;font:500 12px/1.4 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--text);margin-bottom:8px}
 .notice a{color:var(--teal)}
+.talk{margin-top:36px}
+.talk h2{font-size:20px;line-height:1.3;letter-spacing:-.02em;margin:0 0 8px;padding-top:16px;border-top:1px solid var(--line)}
+.talk .one{padding:14px 0;border-top:1px solid var(--line)}
+.talk .one b{font:600 14.5px/1.3 var(--sans);color:var(--text)}
+.talk .one .meta{margin-left:8px;font:500 12.5px/1.4 var(--sans);color:var(--muted)}
+.talk .one p{margin:6px 0 0;font:400 16px/1.55 var(--sans);color:var(--text-2)}
+.talk textarea{min-height:120px}
+#comments{scroll-margin-top:18px}
 .status-line{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
 .status-line .muted{margin:0}
 .transcript{margin-top:56px}
@@ -388,6 +396,7 @@ function footer(): string {
 ${config.cityYoutubeUrl ? `<a href="${esc(config.cityYoutubeUrl)}">City videos</a>` : ''}
 <a href="/#app">Get the app</a>
 <a href="/ask">Ask a question</a>
+<a href="/account">Your account</a>
 <a href="/#subscribe">Get the recap</a>
 </nav>
 <p class="where">Ketchikan · 55.34°N 131.65°W</p>
@@ -497,7 +506,7 @@ ask.addEventListener('close', function() { if (!leaving && state() !== 'on') rem
 if (signed()) { remember('on'); return; }
 if (state() === 'later') return;
 var path = location.pathname;
-if (path === '/subscribe' || path === '/ask' || path.indexOf('/ask/') === 0 || path.indexOf('/confirm/') === 0 || path.indexOf('/preferences/') === 0 || path.indexOf('/unsubscribe/') === 0) return;
+if (path === '/subscribe' || path === '/ask' || path === '/login' || path === '/account' || path.indexOf('/ask/') === 0 || path.indexOf('/login/') === 0 || path.indexOf('/confirm/') === 0 || path.indexOf('/preferences/') === 0 || path.indexOf('/unsubscribe/') === 0) return;
 if (location.hash === '#subscribe') return;
 setTimeout(function() {
   if (location.hash === '#subscribe' || state() === 'later' || state() === 'on') return;
@@ -814,21 +823,74 @@ export function askPage(v: AskPageModel): string {
       : '';
   const manage =
     v.signedIn && v.paid && v.billing
-      ? `<form method="post" action="/ask/portal"><button type="submit" class="linkish">Manage payment</button></form>`
+      ? `<form method="post" action="/ask/portal"><button type="submit" class="linkish">Invoices and subscription</button></form>`
       : '';
+  const accountLink = `<p class="hint"><a href="/account">Your account</a> has invoices, the subscription, and the name on comments.</p>`;
   const signOut = v.signedIn ? `<form method="post" action="/ask/out"><button type="submit" class="linkish">Not you?</button></form>` : '';
   const quota = `${v.left === 0 ? `You've used this month's ${v.cap} question${v.cap === 1 ? '' : 's'}.` : `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`}${v.paid ? ' You\'re on the $5 plan.' : ''}`;
   const status = !v.signedIn
-    ? `<p class="lede">Confirmed readers can ask a few questions a month. $5 a month raises that to 20. Answers use the recaps on this site, name the meeting, and can be wrong.</p>
-${pinNote}<form method="post" action="/ask/link"><label for="email">Email you subscribed with</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">${pinField}<button type="submit">Email me a link</button></form>
-<p class="hint">No account yet? <a href="/#subscribe">Subscribe</a>. The recaps stay free either way.</p>`
+    ? `<p class="lede">Sign in to ask a few questions a month. $5 a month raises that to 20. Answers use the recaps on this site, name the meeting, and can be wrong.</p>
+${pinNote}<form method="post" action="/ask/link"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">${pinField}<button type="submit">Email me a link</button></form>
+<p class="hint">A new address gets a confirmation first, and that creates the account. Recaps stay free. <a href="/login?next=${esc(encodeURIComponent(v.pinId ? `/ask?m=${v.pinId}` : '/ask'))}">Log in</a></p>`
     : !v.ready
-      ? `<p>Questions aren't available yet.</p>${signOut}`
-      : `<p class="ask-left">${quota}</p>${pinNote}${upgrade}${form}${manage}${signOut}`;
+      ? `<p>Questions aren't available yet.</p>${accountLink}${signOut}`
+      : `<p class="ask-left">${quota}</p>${pinNote}${upgrade}${form}${manage}${accountLink}${signOut}`;
   return page(
     'Ask',
     `${v.flash ? `<p class="flash">${esc(v.flash)}</p>` : ''}<h1>Ask about a meeting</h1>${status}${turns ? `<div class="turns">${turns}</div>` : ''}`,
     true,
+  );
+}
+
+export function loginPage(opts: { next: string; flash?: string }): string {
+  return page(
+    'Log in',
+    `${opts.flash ? `<p class="flash">${esc(opts.flash)}</p>` : ''}<h1>Log in</h1>
+<p class="lede">Use the email you subscribed with, or a new one. We'll send a link. A new address confirms first, and that confirmation is the account.</p>
+<form method="post" action="/login"><input type="hidden" name="next" value="${esc(opts.next)}">
+<label for="email">Email</label>
+<input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
+<button type="submit">Email me a link</button></form>
+<p class="hint">The link signs this browser in so you can comment, ask a question, and open invoices. Recaps stay free either way.</p>`,
+  );
+}
+
+export interface AccountPageModel {
+  email: string;
+  displayName: string;
+  paid: boolean;
+  billing: boolean;
+  hasCustomer: boolean;
+  used: number;
+  cap: number;
+  left: number;
+  flash?: string;
+}
+
+/** Name, Ask quota, invoices, and the subscription. Payments stay hidden until Stripe is configured. */
+export function accountPage(v: AccountPageModel): string {
+  const quota = `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.${v.paid ? " You're on the $5 plan." : ''}`;
+  const pay =
+    v.billing && !v.paid
+      ? `<div class="pay"><h2>20 questions a month</h2><p>$5 a month. The recaps stay free. Cancel anytime.</p><form method="post" action="/account/checkout"><button type="submit">Continue to payment</button></form></div>`
+      : '';
+  const invoices = v.billing && v.hasCustomer
+    ? `<form method="post" action="/account/portal"><button type="submit">Invoices and subscription</button></form>
+<p class="hint">Receipts, the card on file, and canceling. Canceling stops at the end of the month already paid for.</p>`
+    : '';
+  return page(
+    'Your account',
+    `${v.flash ? `<p class="flash">${esc(v.flash)}</p>` : ''}<h1>Your account</h1>
+<p class="lede">${esc(v.email)}</p>
+<form method="post" action="/account"><label for="name">Name on comments</label>
+<input id="name" type="text" name="displayName" required maxlength="40" autocomplete="nickname" value="${esc(v.displayName)}">
+<button type="submit">Save name</button></form>
+<p class="hint">This name is public on comments. Your email is not.</p>
+<h2>Ask</h2>
+<p>${esc(quota)}</p>
+<p><a href="/ask">Ask about a meeting</a></p>
+${pay}${invoices}
+<form method="post" action="/account/out"><button type="submit" class="linkish">Log out</button></form>`,
   );
 }
 
@@ -1499,13 +1561,14 @@ export function meetingPage(
   /** Shown when the file is not a meeting, so the page does not pretend there is a recap. */
   gap = '',
   editedAt: Date | null = null,
+  talk?: NoteTalk,
 ): string {
   const note = publicStatusNote(meeting.status);
   const label = gap ? '' : publicPill(meeting.status);
   const banner = label || note ? `<div class="status-line">${label}${note ? `<p class="muted">${esc(note)}</p>` : ''}</div>` : '';
   const transcript = transcriptHtml(segments);
   // A reviewed recap has its own canonical page; drafts stay out of search.
-  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, draft: !approved, editedAt });
+  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, draft: !approved, editedAt, talk });
   const date = formatDate(meeting.meetingDate);
   return shell(
     `${placeBody(meeting.body)} meeting${date ? `, ${date}` : ''} · ${config.newsletterName}`,
@@ -1522,10 +1585,47 @@ ${transcript || (gap ? '' : '<p class="empty">No transcript yet.</p>')}
   );
 }
 
+export interface ReaderComment {
+  name: string;
+  body: string;
+  when: string;
+}
+
+export interface NoteTalk {
+  comments: ReaderComment[];
+  /** Null when this browser is signed out. An empty name still needs one before commenting. */
+  viewer: { name: string } | null;
+  loginPath: string;
+  note?: string;
+}
+
+function commentSection(meetingId: string, talk: NoteTalk): string {
+  const list = talk.comments.length
+    ? talk.comments
+        .map(
+          (c) =>
+            `<div class="one"><b>${esc(c.name)}</b><span class="meta">${esc(c.when)}</span><p>${esc(c.body).replace(/\n/g, '<br>')}</p></div>`,
+        )
+        .join('')
+    : '<p class="empty">No comments yet.</p>';
+  const note = talk.note ? `<p class="thanks">${esc(talk.note)}</p>` : '';
+  const form = !talk.viewer
+    ? `<p><a href="${esc(talk.loginPath)}">Log in to comment</a></p>`
+    : talk.viewer.name
+      ? `<form method="post" action="/notes/${encodeURIComponent(meetingId)}/comment">
+<label for="comment">Comment</label>
+<textarea id="comment" name="body" required maxlength="1000" placeholder="What stood out?"></textarea>
+<p class="hp"><label for="comment-web">Website</label><input id="comment-web" type="text" name="website" tabindex="-1" autocomplete="off"></p>
+<button type="submit">Post comment</button></form>
+<p class="hint">Commenting as ${esc(talk.viewer.name)}. Your email is not shown.</p>`
+      : `<p><a href="/account">Add a name on your account</a> to comment. Your email stays private.</p>`;
+  return `<section class="talk" id="comments"><h2>Comments</h2>${note}${list}${form}</section>`;
+}
+
 export function noteDetailPage(
   meeting: MeetingInfo,
   d: MeetingDigest,
-  opts: { banner?: string; after?: string; draft?: boolean; growth?: Growth; editedAt?: Date | null; thanks?: boolean; thanksAt?: number } = {},
+  opts: { banner?: string; after?: string; draft?: boolean; growth?: Growth; editedAt?: Date | null; thanks?: boolean; thanksAt?: number; talk?: NoteTalk } = {},
 ): string {
   const ts = (t: number) =>
     `<a class="ts" href="${esc(timestampUrl(meeting.sourceUrl, meeting.platform, t))}">▶ ${hms(t)}</a>`;
@@ -1605,6 +1705,7 @@ ${partsList(meeting.title, meeting.body)}
 ${thanksTop}
 <div class="body">${sections}</div>
 <div class="notice"><strong>How this was made</strong>Written with AI from ${isCityBody(meeting.body) ? "the City of Ketchikan's recording" : "the Borough's recording"} and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
+${opts.talk ? commentSection(meeting.id, opts.talk) : ''}
 ${opts.after ?? ''}
 ${!opts.draft && base ? `<p class="share-head">Share this recap</p>${shareButtons(base + canonical, d.headline, `${d.headline}: what happened at the ${placeBody(meeting.body)} meeting.`)}` : ''}
 ${!opts.draft && opts.growth ? signupCallout(opts.growth) : ''}

@@ -18,7 +18,7 @@ export class BillingService {
   }
 
   /** Stripe Checkout for the $5 monthly price. An active subscriber goes to the portal instead. */
-  async checkoutUrl(subscriberId: string): Promise<string> {
+  async checkoutUrl(subscriberId: string, back: '/ask' | '/account' = '/ask'): Promise<string> {
     const reader = await this.prisma.subscriber.findUnique({ where: { id: subscriberId } });
     if (!reader) throw new Error('No reader');
     if (reader.askAccess === 'paid' && reader.stripeCustomerId) return this.portalUrl(reader.stripeCustomerId);
@@ -34,20 +34,53 @@ export class BillingService {
       customer: customerId,
       client_reference_id: reader.id,
       line_items: [{ price: config.stripePriceId, quantity: 1 }],
-      success_url: `${config.publicBaseUrl}/ask?done=pending`,
-      cancel_url: `${config.publicBaseUrl}/ask`,
+      success_url: `${config.publicBaseUrl}${back}?done=pending`,
+      cancel_url: `${config.publicBaseUrl}${back}`,
       integration_identifier: INTEGRATION_ID,
     });
     if (!session.url) throw new Error('Checkout did not return a URL');
     return session.url;
   }
 
+  /**
+   * Invoices, the card on file, and cancel-at-period-end. The configuration is
+   * created here so those switches are on without a Dashboard click. Hosted
+   * portal login stays off; readers sign in on this site.
+   */
   async portalUrl(customerId: string): Promise<string> {
     const session = await this.stripe().billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${config.publicBaseUrl}/ask`,
+      configuration: await this.portalConfiguration(),
+      return_url: `${config.publicBaseUrl}/account`,
     });
     return session.url;
+  }
+
+  private portalConfigId?: string;
+
+  private async portalConfiguration(): Promise<string> {
+    if (this.portalConfigId) return this.portalConfigId;
+    const stripe = this.stripe();
+    const listed = await stripe.billingPortal.configurations.list({ limit: 100, active: true });
+    const found = listed.data.find((row) => portalReady(row));
+    if (found) {
+      this.portalConfigId = found.id;
+      return found.id;
+    }
+    const created = await stripe.billingPortal.configurations.create({
+      name: 'Ketchikan.Vote',
+      metadata: { app: 'kgb-ask' },
+      default_return_url: `${config.publicBaseUrl}/account`,
+      login_page: { enabled: false },
+      business_profile: { headline: 'Invoices and your Ketchikan.Vote subscription' },
+      features: {
+        invoice_history: { enabled: true },
+        payment_method_update: { enabled: true },
+        subscription_cancel: { enabled: true, mode: 'at_period_end', proration_behavior: 'none' },
+      },
+    });
+    this.portalConfigId = created.id;
+    return created.id;
   }
 
   /** Verifies the signature, then updates who can ask. The success page does not grant access. */
@@ -136,6 +169,18 @@ export class BillingService {
     await this.prisma.subscriber.update({ where: { id: reader.id }, data: accessAfterRevoke(gateOf(reader)) });
     this.log.warn(`Ask access revoked for ${reader.id}`);
   }
+}
+
+function portalReady(row: Stripe.BillingPortal.Configuration): boolean {
+  const cancel = row.features.subscription_cancel;
+  return (
+    row.metadata?.app === 'kgb-ask' &&
+    row.features.invoice_history.enabled &&
+    row.features.payment_method_update.enabled &&
+    cancel.enabled &&
+    cancel.mode === 'at_period_end' &&
+    row.login_page?.enabled === false
+  );
 }
 
 function stripeId(value: string | { id: string } | null | undefined): string | null {

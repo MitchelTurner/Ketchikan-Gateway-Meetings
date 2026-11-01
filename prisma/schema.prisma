@@ -37,6 +37,7 @@ model Meeting {
   transcript  Transcript?
   analysis    Analysis?
   corrections Correction[]
+  comments    Comment[]
   sends       EmailSend[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -131,15 +132,39 @@ model Subscriber {
   /** Subscription id whose payment was refunded, disputed, or flagged. That id cannot turn Ask back on. */
   askBlockedSubId      String?
   askLinkSentAt        DateTime?
+  /** Public name on comments. The email address is never shown. */
+  displayName          String?
+  /**
+   * One-time sign-in code. Not unique: a new unique column makes `db push` exit
+   * on deploy and the site never starts.
+   */
+  loginNonce           String?
+  loginExpiresAt       DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   sends       EmailSend[]
   topicSends  TopicSend[]
   asks        AskTurn[]
+  comments    Comment[]
 
   @@index([referredById])
   @@index([refCode])
   @@index([stripeCustomerId])
+  @@index([loginNonce])
+}
+
+/** A reader's note on a published recap. No unique constraint, for the same deploy reason as loginNonce. */
+model Comment {
+  id           String     @id @default(cuid())
+  meetingId    String
+  meeting      Meeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  subscriberId String
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  body         String
+  createdAt    DateTime   @default(now())
+
+  @@index([meetingId, createdAt])
+  @@index([subscriberId, createdAt])
 }
 
 /** One question a reader asked, and the answer written from published recaps. */

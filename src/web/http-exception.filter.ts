@@ -50,6 +50,7 @@ function wantsHtml(req: Request): boolean {
   if (path === '/' || path === '/subscribe' || path === '/notes' || path.startsWith('/notes/') || path.startsWith('/topics')) return true;
   if (path.startsWith('/confirm/') || path.startsWith('/unsubscribe/') || path.startsWith('/preferences/')) return true;
   if (path === '/ask' || path.startsWith('/ask/')) return true;
+  if (path === '/login' || path.startsWith('/login/') || path === '/account' || path.startsWith('/account/')) return true;
   if (path === '/admin' || path.startsWith('/admin/posts') || path.startsWith('/admin/log')) return true;
   return /\/admin\/(meetings|dives)\/[^/]+\/(approve|preview|reject)$/.test(path) || /\/admin\/topics/.test(path);
 }

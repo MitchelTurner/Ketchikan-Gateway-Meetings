@@ -15,6 +15,8 @@ import { Q_CONTROL, Q_EMAIL, Q_PROCESS } from './queues';
 import { TranscriptionService } from './transcription/transcription.service';
 import { PushController } from './push/push.controller';
 import { PushService } from './push/push.service';
+import { AccountController } from './account/account.controller';
+import { AccountService } from './account/account.service';
 import { AskController } from './ask/ask.controller';
 import { AskService } from './ask/ask.service';
 import { BillingService } from './ask/billing.service';
@@ -27,7 +29,7 @@ import { StatsService } from './web/stats.service';
     BullModule.forRootAsync({ useFactory: () => ({ connection: redisConnection() }) }),
     BullModule.registerQueue({ name: Q_CONTROL }, { name: Q_PROCESS }, { name: Q_EMAIL }),
   ],
-  controllers: [PublicController, AdminController, PushController, AskController],
+  controllers: [PublicController, AdminController, PushController, AskController, AccountController],
   providers: [
     PrismaService,
     MediaService,
@@ -47,6 +49,7 @@ import { StatsService } from './web/stats.service';
     StatsService,
     AskService,
     BillingService,
+    AccountService,
   ],
 })
 export class AppModule {}

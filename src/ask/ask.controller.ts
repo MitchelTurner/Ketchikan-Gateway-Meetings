@@ -2,20 +2,17 @@ import { BadRequestException, Body, Controller, Get, Header, Headers, HttpCode, 
 import Stripe from 'stripe';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { AccountService } from '../account/account.service';
 import { config } from '../config';
-import { EmailService } from '../email/email.service';
 import { PrismaService } from '../prisma.service';
-import { esc } from '../util';
-import { readerCookie, readerToken } from '../web/reader-cookie';
+import { readerCookie } from '../web/reader-cookie';
 import { AskPageModel, askPage, AskTurnView } from '../web/page';
 import { AskLimitError, AskService, AskUnavailableError } from './ask.service';
 import { ASK_PRICE_LABEL, capFor } from './ask-logic';
 import { BillingService } from './billing.service';
 
-const LINK_WAIT_MS = 10 * 60 * 1000;
-
 const FLASH: Record<string, string> = {
-  link: 'If that address is confirmed, a link is on its way.',
+  link: 'Check your inbox. The link signs this browser in.',
   'link-failed': "The email didn't send. Try again in a minute.",
   cap: "You've used this month's questions.",
   failed: "That question didn't get an answer. Try again in a minute.",
@@ -33,7 +30,7 @@ export class AskController {
     private prisma: PrismaService,
     private ask: AskService,
     private billing: BillingService,
-    private email: EmailService,
+    private accounts: AccountService,
   ) {}
 
   @Get('ask')
@@ -57,31 +54,11 @@ export class AskController {
 
   @Post('ask/link')
   async link(@Body() body: { email?: string; meeting?: string }, @Res() res: Response) {
-    const email = String(body.email ?? '').trim().toLowerCase();
     const meeting = safeId(body.meeting);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new BadRequestException('That email does not look right');
-    const reader = await this.prisma.subscriber.findUnique({ where: { email } });
-    const back = `/ask?done=link${meeting ? `&m=${encodeURIComponent(meeting)}` : ''}`;
-    if (reader?.status === 'CONFIRMED') {
-      const recent = reader.askLinkSentAt && Date.now() - reader.askLinkSentAt.getTime() < LINK_WAIT_MS;
-      if (!recent) {
-        if (!config.emailReady) return res.redirect(303, `/ask?done=link-failed${meeting ? `&m=${encodeURIComponent(meeting)}` : ''}`);
-        try {
-          const url = `${config.publicBaseUrl}/ask/in/${reader.token}${meeting ? `?m=${encodeURIComponent(meeting)}` : ''}`;
-          await this.email.send({
-            to: reader.email,
-            subject: `Your link to ask about meetings · ${config.newsletterName}`,
-            html: `<p>Use this link to ask about a Ketchikan meeting. It signs this browser in.</p><p><a href="${esc(url)}">${esc(url)}</a></p><p style="color:#5b6675;font-size:12px">${esc(config.mailingAddress)}</p>`,
-            text: `Use this link to ask about a Ketchikan meeting:\n${url}\n\n${config.mailingAddress}`,
-          });
-          await this.prisma.subscriber.update({ where: { id: reader.id }, data: { askLinkSentAt: new Date() } });
-        } catch (err) {
-          this.log.warn(`Ask link not sent: ${(err as Error).message}`);
-          return res.redirect(303, `/ask?done=link-failed${meeting ? `&m=${encodeURIComponent(meeting)}` : ''}`);
-        }
-      }
-    }
-    res.redirect(303, back);
+    const result = await this.accounts.begin(body.email, meeting ? `/ask?m=${meeting}` : '/ask');
+    if (result === 'bad-email') throw new BadRequestException('That email does not look right');
+    const done = result === 'failed' ? 'link-failed' : 'link';
+    res.redirect(303, `/ask?done=${done}${meeting ? `&m=${encodeURIComponent(meeting)}` : ''}`);
   }
 
   @Post('ask/out')
@@ -145,12 +122,8 @@ export class AskController {
     return { received: true };
   }
 
-  private async reader(req: Request) {
-    const token = readerToken(req);
-    if (!token) return null;
-    const reader = await this.prisma.subscriber.findUnique({ where: { token } });
-    if (!reader || reader.status !== 'CONFIRMED') return null;
-    return reader;
+  private reader(req: Request) {
+    return this.accounts.readerFrom(req);
   }
 
   private async model(req: Request, done?: string, meetingId?: string): Promise<AskPageModel> {

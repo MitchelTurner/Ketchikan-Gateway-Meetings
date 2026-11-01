@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Header, HttpCode, Logger, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { AccountService } from '../account/account.service';
+import { cleanDisplayName, safeNext } from '../account/account-logic';
 import type { Request, Response } from 'express';
 import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { emptyRecording } from '../analysis/empty-recording';
@@ -13,7 +15,7 @@ import {
   BADGES, badgeFor, communityGoal, confirmedReaders, ensureRefCode, FOUNDING_READERS, inviteUrl, readerNumber, REF_PATTERN, referralCount,
 } from '../referrals';
 import {
-  bodyCheckboxes, ComingGroup, comingClock, comingContext, comingDate, comingIsPast, comingWho, Growth, inviteKit, meetingPage, NoteHit, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
+  bodyCheckboxes, ComingGroup, comingClock, comingContext, comingDate, comingIsPast, comingWho, Growth, inviteKit, meetingPage, NoteHit, NoteTalk, noteDetailPage, noteHref, notesSearchPage, page, signupPage, signupRemember, stepList, topicCheckboxes, topicPage,
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { readerCookie } from './reader-cookie';
@@ -41,13 +43,17 @@ function rememberSignup(res: Response, req: Request, on: boolean): void {
 @Controller()
 export class PublicController {
   private log = new Logger(PublicController.name);
-  constructor(private prisma: PrismaService, private email: EmailService) {}
+  constructor(
+    private prisma: PrismaService,
+    private email: EmailService,
+    private accounts: AccountService,
+  ) {}
 
   @Get('robots.txt')
   @Header('Content-Type', 'text/plain; charset=utf-8')
   robots() {
     const base = process.env.PUBLIC_BASE_URL ? config.publicBaseUrl : '';
-    return `User-agent: *\nDisallow: /admin\nDisallow: /ask\nDisallow: /stripe/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
+    return `User-agent: *\nDisallow: /admin\nDisallow: /ask\nDisallow: /login\nDisallow: /account\nDisallow: /stripe/\nDisallow: /confirm/\nDisallow: /preferences/\nDisallow: /unsubscribe/\n${base ? `Sitemap: ${base}/sitemap.xml\n` : ''}`;
   }
 
   /** Written recaps and public topics, so search engines find them without crawling the index pages. */
@@ -308,7 +314,7 @@ export class PublicController {
 
   @Get('meetings/:id')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async meeting(@Param('id') id: string) {
+  async meeting(@Param('id') id: string, @Query('comment') comment: string | undefined, @Req() req: Request) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { transcript: true, analysis: true } });
     if (!m || m.analysis?.hiddenAt) return page('Not found', `<h1>That meeting isn't here</h1><p><a href="/">Back home</a></p>`);
     const segments = Array.isArray(m.transcript?.segments)
@@ -316,7 +322,9 @@ export class PublicController {
       : [];
     const raw = normalizeDigest(m.analysis?.data);
     const empty = !!raw && emptyRecording(raw);
-    return meetingPage(m, empty ? null : raw, Boolean(m.analysis?.approvedAt), segments, empty ? MIC_CHECK : '', m.analysis?.editedAt ?? null);
+    const digest = empty ? null : raw;
+    const talk = digest ? await this.talkOn(req, m.id, digest.headline, comment) : undefined;
+    return meetingPage(m, digest, Boolean(m.analysis?.approvedAt), segments, empty ? MIC_CHECK : '', m.analysis?.editedAt ?? null, talk);
   }
 
   /** Written recaps that aren't hidden, newest meeting date first. A query searches within that order. */
@@ -352,7 +360,13 @@ export class PublicController {
   /** The slug only makes the URL readable; the id finds the note. */
   @Get(['notes/:id', 'notes/:id/:slug'])
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async note(@Param('id') id: string, @Query('correction') correction: string | undefined, @Query('d') flagged: string | undefined, @Req() req: Request) {
+  async note(
+    @Param('id') id: string,
+    @Query('correction') correction: string | undefined,
+    @Query('comment') comment: string | undefined,
+    @Query('d') flagged: string | undefined,
+    @Req() req: Request,
+  ) {
     const m = await this.prisma.meeting.findUnique({ where: { id }, include: { analysis: true } });
     const raw = m?.analysis && !m.analysis.hiddenAt ? normalizeDigest(m.analysis.data) : null;
     if (m && raw && emptyRecording(raw)) return meetingPage(m, null, false, [], MIC_CHECK);
@@ -366,7 +380,24 @@ export class PublicController {
       editedAt: m.analysis?.editedAt ?? null,
       thanks: correction === '1',
       thanksAt: correction === '1' && Number.isInteger(at) && at >= 0 ? at : -1,
+      talk: await this.talkOn(req, m.id, raw.headline, comment),
     });
+  }
+
+  private async talkOn(req: Request, meetingId: string, headline: string, comment?: string): Promise<NoteTalk> {
+    const reader = await this.accounts.readerFrom(req);
+    const notes: Record<string, string> = {
+      ok: 'Posted.',
+      name: 'Add a name on your account before commenting. Your email is not shown.',
+      cap: "That's enough for today. You can comment again tomorrow.",
+      empty: 'Write a comment first.',
+    };
+    return {
+      comments: await this.accounts.commentsFor(meetingId),
+      viewer: reader ? { name: cleanDisplayName(reader.displayName) } : null,
+      loginPath: `/login?next=${encodeURIComponent(noteHref(meetingId, headline))}`,
+      note: comment ? notes[comment] : undefined,
+    };
   }
 
   /** A reader saying one written decision is wrong. A filled-in honeypot is ignored. */
@@ -482,7 +513,7 @@ export class PublicController {
 
   @Get('confirm/:token')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async confirm(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async confirm(@Param('token') token: string, @Query('next') next: string | undefined, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     let sub = await this.prisma.subscriber.findUnique({ where: { token } });
     if (!sub) return page('Link expired', `<h1>That link didn't work</h1><p><a href="/">Sign up again</a>.</p>`);
     if (sub.status !== 'CONFIRMED' && !confirmStillOpen(sub.confirmExpiresAt)) {
@@ -496,11 +527,13 @@ export class PublicController {
     const readerNo = await readerNumber(this.prisma, sub.confirmedAt!);
     rememberSignup(res, req, true);
     res.append('Set-Cookie', readerCookie(req, sub.token));
+    const go = next ? `<p><a href="${esc(safeNext(next))}">Continue</a></p>` : '';
     return page(
       'Subscribed',
       `<h1>You're subscribed</h1>${stepList(3)}
 <div class="reader-no"><span>You are reader</span><strong>#${readerNo.toLocaleString('en-US')}</strong><span>of ${esc(config.newsletterName)}</span></div>
-<p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a>, or <a href="/ask">ask about a meeting</a>. Three questions a month are included.</p>
+<p>The next recap arrives after the next Borough meeting is posted. Meanwhile, <a href="/notes">read the latest recaps</a>, <a href="/ask">ask about a meeting</a>, or <a href="/account">open your account</a>. Three questions a month are included.</p>
+${go}
 ${await this.kit(sub)}${signupRemember(true)}`,
       true,
     );

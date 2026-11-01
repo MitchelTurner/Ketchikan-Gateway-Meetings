@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { MeetingDigest, normalizeDigest } from '../analysis/analysis.service';
 import { emptyRecording } from '../analysis/empty-recording';
+import { sessionOpen } from '../account/account-logic';
 import { config } from '../config';
 import { timestampUrl } from '../email/render';
 import { PrismaService } from '../prisma.service';
@@ -67,7 +68,7 @@ export class AskService {
   async ask(subscriberId: string, question: string, pinId: string | null): Promise<void> {
     if (!config.askReady) throw new AskUnavailableError();
     const reader = await this.prisma.subscriber.findUnique({ where: { id: subscriberId } });
-    if (!reader || reader.status !== 'CONFIRMED') throw new AskUnavailableError();
+    if (!reader || !sessionOpen(reader)) throw new AskUnavailableError();
     const paid = reader.askAccess === 'paid';
     const cap = capFor(paid);
     const used = await this.usedThisMonth(subscriberId);
