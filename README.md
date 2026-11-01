@@ -127,7 +127,7 @@ Comments sit on each recap. A signed-in reader needs a display name first. The e
 
 ## Account
 
-`/login` emails a sign-in link in the same letter as the confirmation email. `/login/in/:nonce` signs that browser in and forgets the code. `/account` holds the name, the Ask quota, invoices, and log out. Unsubscribing stops the recap emails and does not delete the account; the same person can sign in again to comment or manage a subscription.
+`/login` emails a sign-in link in the same letter as the confirmation email. A new address creates the account. The page says what the account is for: commenting under a public name, and the $5 subscription. Coming from a recap, the comment box asks for the email there and returns to that recap. `/login/in/:nonce` signs that browser in and forgets the code. `/account` holds the comment name, the Ask quota, invoices, and log out. Unsubscribing stops the recap emails and does not delete the account; the same person can sign in again to comment or manage a subscription.
 
 ## Costs (rough, per 3-hour meeting)
 AssemblyAI ≈ $0.45–1.10 depending on model · Claude Sonnet ≈ $0.30–0.60 (≈60–90k input tokens) · research ≈ $0.10–0.40 (up to 12 web searches at $10/1,000, plus fetched pages) · one Ask question is a few cents · Resend free tier covers 3,000 emails/month.

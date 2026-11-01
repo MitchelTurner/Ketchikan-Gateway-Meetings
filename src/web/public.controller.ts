@@ -397,7 +397,7 @@ export class PublicController {
     return {
       comments: await this.accounts.commentsFor(meetingId),
       viewer: reader ? { name: cleanDisplayName(reader.displayName) } : null,
-      loginPath: `/login?next=${encodeURIComponent(noteHref(meetingId, headline))}`,
+      back: noteHref(meetingId, headline),
       note: comment ? notes[comment] : undefined,
     };
   }

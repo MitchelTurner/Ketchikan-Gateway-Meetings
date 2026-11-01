@@ -105,6 +105,12 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .pay{border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:18px 18px 8px;margin:8px 0 18px}
 .pay h2{font-size:22px;margin:0 0 8px}
 .pay p{margin:0 0 4px;color:var(--text-2)}
+.reasons{display:grid;gap:12px;margin:4px 0 8px}
+@media (min-width:640px){.reasons{grid-template-columns:1fr 1fr}}
+.reasons .pay{margin:0}
+.reasons .pay h2{font-size:18px}
+.reasons .pay.on{border-color:var(--teal)}
+.pay .kicker{color:var(--teal);margin-bottom:8px}
 .flash{border:1px solid var(--line-2);border-radius:12px;padding:12px 14px;margin:0 0 16px;font:500 14.5px/1.45 var(--sans);background:var(--surface)}
 
 /* Front page: one column, top to bottom, in the same order as the nav. */
@@ -206,6 +212,8 @@ button.linkish:hover{opacity:1;text-decoration:underline}
 .talk .one .meta{margin-left:8px;font:500 12.5px/1.4 var(--sans);color:var(--muted)}
 .talk .one p{margin:6px 0 0;font:400 16px/1.55 var(--sans);color:var(--text-2)}
 .talk textarea{min-height:120px}
+.talk .gate{margin-top:16px}
+.talk .gate h2{border:0;padding-top:0;margin:0 0 8px;font-size:20px}
 #comments{scroll-margin-top:18px}
 .status-line{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
 .status-line .muted{margin:0}
@@ -397,7 +405,7 @@ function footer(): string {
 ${config.cityYoutubeUrl ? `<a href="${esc(config.cityYoutubeUrl)}">City videos</a>` : ''}
 <a href="/#app">Get the app</a>
 <a href="/ask">Ask a question</a>
-<a href="/account">Your account</a>
+<a href="/account">Account</a>
 <a href="/#subscribe">Get the recap</a>
 </nav>
 <p class="where">Ketchikan · 55.34°N 131.65°W</p>
@@ -831,9 +839,9 @@ export function askPage(v: AskPageModel): string {
   const signOut = v.signedIn ? `<form method="post" action="/ask/out"><button type="submit" class="linkish">Not you?</button></form>` : '';
   const quota = `${v.left === 0 ? `You've used this month's ${v.cap} question${v.cap === 1 ? '' : 's'}.` : `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`}${v.paid ? ' You\'re on the $5 plan.' : ''}`;
   const status = !v.signedIn
-    ? `<p class="lede">Sign in to ask a few questions a month. $5 a month raises that to 20. Answers use the recaps on this site, name the meeting, and can be wrong.</p>
+    ? `<p class="lede">Create an account or sign in. A few questions a month are free. $5 a month raises that to 20. The same account is how you comment on a recap.</p>
 ${pinNote}<form method="post" action="/ask/link"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">${pinField}<button type="submit">Email me a link</button></form>
-<p class="hint">A new address gets a confirmation first, and that creates the account. Recaps stay free. <a href="/login?next=${esc(encodeURIComponent(v.pinId ? `/ask?m=${v.pinId}` : '/ask'))}">Log in</a></p>`
+<p class="hint">A new address confirms first, and that creates the account. The link signs this browser in. Recaps stay free.</p>`
     : !v.ready
       ? `<p>Questions aren't available yet.</p>${accountLink}${signOut}`
       : `<p class="ask-left">${quota}</p>${pinNote}${upgrade}${form}${manage}${accountLink}${signOut}`;
@@ -844,16 +852,46 @@ ${pinNote}<form method="post" action="/ask/link"><label for="email">Email</label
   );
 }
 
+/** Why this person opened the sign-in page. The same email creates an account or signs in. */
+function loginIntent(next: string): { title: string; lede: string; focus: 'comment' | 'ask' | '' } {
+  if (next.startsWith('/notes/')) {
+    return {
+      title: 'Comment on this recap',
+      lede: 'Create an account or sign in with your email. You will come back to this recap.',
+      focus: 'comment',
+    };
+  }
+  if (next === '/ask' || next.startsWith('/ask?')) {
+    return {
+      title: 'Sign in to ask',
+      lede: 'Create an account or sign in with your email. A few questions a month are free.',
+      focus: 'ask',
+    };
+  }
+  return {
+    title: 'Create an account',
+    lede: 'One email for comments and for the $5 subscription. A new address creates the account. The same form signs you in.',
+    focus: '',
+  };
+}
+
 export function loginPage(opts: { next: string; flash?: string }): string {
+  const intent = loginIntent(opts.next);
+  const on = (focus: 'comment' | 'ask') => (intent.focus === focus ? ' on' : '');
   return page(
-    'Log in',
-    `${opts.flash ? `<p class="flash">${esc(opts.flash)}</p>` : ''}<h1>Log in</h1>
-<p class="lede">Use the email you subscribed with, or a new one. We'll send a link. A new address confirms first, and that confirmation is the account.</p>
+    intent.title,
+    `${opts.flash ? `<p class="flash">${esc(opts.flash)}</p>` : ''}<h1>${esc(intent.title)}</h1>
+<p class="lede">${esc(intent.lede)}</p>
+<div class="reasons">
+<div class="pay${on('comment')}"><p class="kicker">Comments</p><h2>Post under your name</h2><p>The name is public. The email stays private.</p></div>
+<div class="pay${on('ask')}"><p class="kicker">Subscription</p><h2>$5 a month</h2><p>20 questions. Recaps stay free. Cancel anytime.</p></div>
+</div>
 <form method="post" action="/login"><input type="hidden" name="next" value="${esc(opts.next)}">
 <label for="email">Email</label>
 <input id="email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
 <button type="submit">Email me a link</button></form>
-<p class="hint">The link signs this browser in so you can comment, ask a question, and open invoices. Recaps stay free either way.</p>`,
+<p class="hint">The link expires in 2 hours and works once. Recaps stay free either way.</p>`,
+    true,
   );
 }
 
@@ -869,30 +907,34 @@ export interface AccountPageModel {
   flash?: string;
 }
 
-/** Name, Ask quota, invoices, and the subscription. Payments stay hidden until Stripe is configured. */
+/** Name for comments, then the subscription. Payments stay hidden until Stripe is configured. */
 export function accountPage(v: AccountPageModel): string {
-  const quota = `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.${v.paid ? " You're on the $5 plan." : ''}`;
+  const quota = `${v.left} of ${v.cap} question${v.cap === 1 ? '' : 's'} left this month.`;
   const pay =
     v.billing && !v.paid
-      ? `<div class="pay"><h2>20 questions a month</h2><p>$5 a month. The recaps stay free. Cancel anytime.</p><form method="post" action="/account/checkout"><button type="submit">Continue to payment</button></form></div>`
+      ? `<div class="pay"><h2>$5 a month</h2><p>20 questions. Recaps stay free. Cancel anytime.</p><form method="post" action="/account/checkout"><button type="submit">Continue to payment</button></form></div>`
       : '';
+  const paid = v.paid
+    ? `<div class="pay"><h2>You're on the $5 plan</h2><p>${esc(quota)} Canceling stops at the end of the month already paid for.</p></div>`
+    : '';
   const invoices = v.billing && v.hasCustomer
     ? `<form method="post" action="/account/portal"><button type="submit">Invoices and subscription</button></form>
-<p class="hint">Receipts, the card on file, and canceling. Canceling stops at the end of the month already paid for.</p>`
+<p class="hint">Receipts, the card on file, and canceling.</p>`
     : '';
   return page(
     'Your account',
     `${v.flash ? `<p class="flash">${esc(v.flash)}</p>` : ''}<h1>Your account</h1>
 <p class="lede">${esc(v.email)}</p>
+<h2 class="section">Comments</h2>
+<p>The name other readers see. Your email is not shown.</p>
 <form method="post" action="/account"><label for="name">Name on comments</label>
-<input id="name" type="text" name="displayName" required maxlength="40" autocomplete="nickname" value="${esc(v.displayName)}">
+<input id="name" type="text" name="displayName" required maxlength="40" autocomplete="nickname" value="${esc(v.displayName)}" placeholder="Harbor">
 <button type="submit">Save name</button></form>
-<p class="hint">This name is public on comments. Your email is not.</p>
-<h2>Ask</h2>
-<p>${esc(quota)}</p>
-<p><a href="/ask">Ask about a meeting</a></p>
-${pay}${invoices}
+<h2 class="section">Subscription</h2>
+<p>${v.paid ? '' : `${esc(quota)} `}<a href="/ask">Ask about a meeting</a></p>
+${paid}${pay}${invoices}
 <form method="post" action="/account/out"><button type="submit" class="linkish">Log out</button></form>`,
+    true,
   );
 }
 
@@ -1597,7 +1639,8 @@ export interface NoteTalk {
   comments: ReaderComment[];
   /** Null when this browser is signed out. An empty name still needs one before commenting. */
   viewer: { name: string } | null;
-  loginPath: string;
+  /** This recap, so sign-in and the name form can return here. */
+  back: string;
   note?: string;
 }
 
@@ -1612,7 +1655,13 @@ function commentSection(meetingId: string, talk: NoteTalk): string {
     : '<p class="empty">No comments yet.</p>';
   const note = talk.note ? `<p class="thanks">${esc(talk.note)}</p>` : '';
   const form = !talk.viewer
-    ? `<p><a href="${esc(talk.loginPath)}">Log in to comment</a></p>`
+    ? `<div class="pay gate"><p class="kicker">Account</p><h2>Comment on this recap</h2>
+<p>Create an account or log in. The name you choose is public. Your email is not.</p>
+<form method="post" action="/login"><input type="hidden" name="next" value="${esc(talk.back)}">
+<label for="comment-email">Email</label>
+<input id="comment-email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
+<button type="submit">Email me a link</button></form>
+<p class="hint">A new address creates the account. The link brings you back here.</p></div>`
     : talk.viewer.name
       ? `<form method="post" action="/notes/${encodeURIComponent(meetingId)}/comment">
 <label for="comment">Comment</label>
@@ -1620,7 +1669,12 @@ function commentSection(meetingId: string, talk: NoteTalk): string {
 <p class="hp"><label for="comment-web">Website</label><input id="comment-web" type="text" name="website" tabindex="-1" autocomplete="off"></p>
 <button type="submit">Post comment</button></form>
 <p class="hint">Commenting as ${esc(talk.viewer.name)}. Your email is not shown.</p>`
-      : `<p><a href="/account">Add a name on your account</a> to comment. Your email stays private.</p>`;
+      : `<div class="pay gate"><p class="kicker">Comments</p><h2>Add your name</h2>
+<p>This is what other readers see. Your email stays private.</p>
+<form method="post" action="/account"><input type="hidden" name="next" value="${esc(talk.back)}">
+<label for="comment-name">Name</label>
+<input id="comment-name" type="text" name="displayName" required maxlength="40" autocomplete="nickname" placeholder="Harbor">
+<button type="submit">Save name</button></form></div>`;
   return `<section class="talk" id="comments"><h2>Comments</h2>${note}${list}${form}</section>`;
 }
 

@@ -79,13 +79,17 @@ export class AccountController {
   }
 
   @Post('account')
-  async rename(@Req() req: Request, @Res() res: Response, @Body() body: { displayName?: string }) {
+  async rename(@Req() req: Request, @Res() res: Response, @Body() body: { displayName?: string; next?: string }) {
     const reader = await this.accounts.readerFrom(req);
     if (!reader) {
       res.redirect(303, '/login?next=%2Faccount');
       return;
     }
     const ok = await this.accounts.saveName(reader.id, body.displayName);
+    if (ok && body.next) {
+      res.redirect(303, `${safeNext(body.next)}#comments`);
+      return;
+    }
     res.redirect(303, `/account?done=${ok ? 'saved' : 'name'}`);
   }
 
