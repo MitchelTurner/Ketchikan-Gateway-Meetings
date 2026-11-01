@@ -28,6 +28,7 @@ export function classify(path: string): { kind: string; ref: string | null } | n
   if (p === '/') return { kind: 'home', ref: null };
   if (p === '/notes') return { kind: 'notes', ref: null };
   if (p === '/topics') return { kind: 'topics', ref: null };
+  if (p === '/about' || p === '/boards' || p === '/testify') return { kind: p.slice(1), ref: null };
   let m = /^\/notes\/([^/]+)(?:\/[^/]*)?$/.exec(p);
   if (m) return { kind: 'note', ref: decodeURIComponent(m[1]) };
   m = /^\/meetings\/([^/]+)$/.exec(p);

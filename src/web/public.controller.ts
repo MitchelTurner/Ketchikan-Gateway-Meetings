@@ -19,6 +19,7 @@ import {
   buildTopicsBoard, topicsIndexPage, WeekBrief, weekSentence, WorkHit,
 } from './page';
 import { aiRobotsGroup } from './ai-opt-out';
+import { aboutPage, boardsPage, testifyPage } from './guide';
 import { readerCookie } from './reader-cookie';
 import { readCookie } from './stats.service';
 
@@ -70,6 +71,9 @@ export class PublicController {
       `<url><loc>${esc(base)}/</loc><changefreq>daily</changefreq></url>`,
       `<url><loc>${esc(base)}/notes</loc><changefreq>daily</changefreq></url>`,
       `<url><loc>${esc(base)}/topics</loc><changefreq>weekly</changefreq></url>`,
+      `<url><loc>${esc(base)}/about</loc><changefreq>monthly</changefreq></url>`,
+      `<url><loc>${esc(base)}/boards</loc><changefreq>monthly</changefreq></url>`,
+      `<url><loc>${esc(base)}/testify</loc><changefreq>monthly</changefreq></url>`,
       ...topics.map((t) => `<url><loc>${esc(base)}/topics/${esc(t.slug)}</loc><lastmod>${t.updatedAt.toISOString().slice(0, 10)}</lastmod></url>`),
       ...notes.flatMap((n) => {
         const d = publicDigest(n.analysis?.data);
@@ -82,6 +86,33 @@ export class PublicController {
   @Get('health')
   health() {
     return { ok: true };
+  }
+
+  @Get('about')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  about() {
+    return aboutPage();
+  }
+
+  @Get('boards')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  boards() {
+    return boardsPage();
+  }
+
+  @Get('testify')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  testify() {
+    return testifyPage();
+  }
+
+  /** Topics filed on one meeting, so the recap points at the standing issue pages. */
+  private async topicLinks(meetingId: string): Promise<{ slug: string; name: string }[]> {
+    const rows = await this.prisma.meetingTopic.findMany({
+      where: { meetingId, topic: { status: { not: 'ARCHIVED' } } },
+      select: { topic: { select: { slug: true, name: true } } },
+    });
+    return rows.map((r) => r.topic).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   @Get()
@@ -319,7 +350,8 @@ export class PublicController {
     const empty = !!raw && emptyRecording(raw);
     const digest = empty ? null : raw;
     const talk = digest ? await this.talkOn(req, m.id, digest.headline, comment) : undefined;
-    return meetingPage(m, digest, Boolean(m.analysis?.approvedAt), segments, empty ? MIC_CHECK : '', m.analysis?.editedAt ?? null, talk);
+    const topics = digest ? await this.topicLinks(m.id) : [];
+    return meetingPage(m, digest, Boolean(m.analysis?.approvedAt), segments, empty ? MIC_CHECK : '', m.analysis?.editedAt ?? null, talk, topics);
   }
 
   /** Written recaps that aren't hidden, newest meeting date first. A query searches within that order. */
@@ -369,13 +401,19 @@ export class PublicController {
       return page('Note not found', `<h1>That note isn't up yet</h1><p>Recaps appear here once they've been written. <a href="/notes">Back to search</a>.</p>`);
     }
     const at = Number(flagged);
+    const [growth, topics, talk] = await Promise.all([
+      this.growth(req),
+      this.topicLinks(m.id),
+      this.talkOn(req, m.id, raw.headline, comment),
+    ]);
     return noteDetailPage(m, raw, {
-      growth: await this.growth(req),
+      growth,
       draft: !m.analysis?.approvedAt,
       editedAt: m.analysis?.editedAt ?? null,
       thanks: correction === '1',
       thanksAt: correction === '1' && Number.isInteger(at) && at >= 0 ? at : -1,
-      talk: await this.talkOn(req, m.id, raw.headline, comment),
+      talk,
+      topics,
     });
   }
 

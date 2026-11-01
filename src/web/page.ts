@@ -48,6 +48,7 @@ h1{font-size:clamp(30px,4vw,40px);line-height:1.2;letter-spacing:-.025em;margin:
 p{margin:0 0 16px}
 em.grad,.grad{font-style:normal;font-weight:inherit;color:var(--teal)}
 .kicker{display:block;font:600 13px/1.4 var(--sans);letter-spacing:0;color:var(--teal);margin-bottom:8px}
+.kicker a{color:inherit;text-decoration:none}.kicker a:hover{text-decoration:underline}
 .meta{font:400 13px/1.5 var(--mono);letter-spacing:-.01em;color:var(--muted)}
 .muted{color:var(--muted);font-size:15px}
 .dek{font:400 19px/1.6 var(--sans);color:var(--text-2)}
@@ -174,6 +175,8 @@ button:hover{opacity:.9}button:active{transform:translateY(1px)}
 .method li::before{content:"0" counter(step);position:absolute;left:0;top:1px;font:500 13px/1 var(--mono);padding:6px 0;width:32px;text-align:center;border-radius:8px;background:var(--surface-2);color:var(--teal)}
 .method b{display:block;color:var(--text);font-weight:600}
 .aside-note{font-size:13.5px;line-height:1.6;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;margin:4px 0 0}
+.aside-note a{color:var(--teal)}
+.aside-note + .aside-note{border-top:0;padding-top:8px}
 
 /* Article */
 .article{padding:20px 0 24px}
@@ -230,6 +233,14 @@ a.hit:hover{border-color:var(--line-2);background:var(--surface-2)}
 .hit h2{font-size:22px;line-height:1.3;letter-spacing:-.02em;margin:0 0 8px}
 .hit p{margin:0;font:400 15px/1.6 var(--sans);color:var(--text-2)}
 .hit p.who,.stack .item p.who,.docket p.who,.lead p.who,.article p.who{margin:0 0 8px;font:400 13.5px/1.45 var(--sans);color:var(--muted)}
+.article p.who a{color:inherit}
+.filed{margin:28px 0 0;font:500 15.5px/1.5 var(--sans);color:var(--text-2)}
+.filed a{color:var(--teal)}
+.guide-nav{display:flex;flex-wrap:wrap;gap:8px 18px;margin:0 0 18px}
+.guide-nav a{font:500 14.5px/1.3 var(--sans);color:var(--text-2);text-decoration:none}
+.guide-nav a[aria-current=page]{color:var(--teal)}
+.guide-nav a:hover{color:var(--teal)}
+.board{scroll-margin-top:20px}
 a.hit:hover h2{color:var(--teal)}
 .search{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:end;margin:8px 0 24px}
 .search label{margin:0 0 8px}.search button{margin:0;width:100%;padding:14px 22px}
@@ -320,7 +331,8 @@ a.hit:hover h2{color:var(--teal)}
 
 /* Footer: the note, then the links the bottom bar doesn't cover. */
 footer.site{position:relative;margin-top:56px;border-top:1px solid var(--line);padding:28px 0 8px;font:400 15px/1.6 var(--sans);color:var(--text-2)}
-footer.site p{max-width:38em;margin:0}
+footer.site p{max-width:42em;margin:0}
+footer.site p a{color:var(--teal)}
 footer.site nav{display:flex;flex-wrap:wrap;gap:0 22px;margin-top:6px}
 footer.site nav a{display:inline-flex;align-items:center;min-height:44px;color:var(--text);text-decoration:none;font:500 15px/1.2 var(--sans);letter-spacing:-.011em}
 footer.site nav a:hover{color:var(--teal)}
@@ -387,8 +399,11 @@ window.addEventListener('hashchange',mark);
 
 function footer(): string {
   return `<footer class="site"><div class="wrap">
-<p>An independent public service from Ketchikan, Alaska. Not an official Ketchikan Gateway Borough or City of Ketchikan publication. Recaps are written with AI from the Borough's recordings and the City's YouTube videos, and can contain mistakes.</p>
+<p>Ketchikan.Vote is an independent project by <a href="https://mitchelturner.com" rel="me">Mitchel Turner</a> of <a href="https://mitchelturner.dev" rel="me">Mitchel Turner Dev, LLC</a>. It helps local journalists and residents find what a public meeting decided. It is not a Ketchikan Gateway Borough or City of Ketchikan publication. Recaps are written with AI from the Borough's recordings and the City's YouTube videos, and can contain mistakes.</p>
 <nav aria-label="About this site">
+<a href="/about">About</a>
+<a href="/boards">Boards</a>
+<a href="/testify">Speak at a meeting</a>
 <a href="/#how">How we report</a>
 <a href="${esc(config.archiveUrl)}">Borough archive</a>
 ${config.cityYoutubeUrl ? `<a href="${esc(config.cityYoutubeUrl)}">City videos</a>` : ''}
@@ -421,6 +436,28 @@ function baseUrl(): string {
   }
 }
 
+/** Calendar day in Alaska, so a late-evening edit does not land on the next UTC date. */
+function isoDay(d: Date): string {
+  return d.toLocaleDateString('en-CA', { timeZone: config.timezone });
+}
+
+/** The publisher search engines should attach to every public page. */
+function sitePublisher(): Record<string, unknown> {
+  const base = baseUrl();
+  return {
+    '@type': 'Organization',
+    name: config.newsletterName,
+    ...(base
+      ? {
+          url: `${base}/`,
+          logo: { '@type': 'ImageObject', url: `${base}/logo.png`, width: 1000, height: 1000 },
+        }
+      : {}),
+    parentOrganization: { '@type': 'Organization', name: 'Mitchel Turner Dev, LLC', url: 'https://mitchelturner.dev' },
+    founder: { '@type': 'Person', name: 'Mitchel Turner', url: 'https://mitchelturner.com' },
+  };
+}
+
 function seoTags(title: string, seo: Seo): string {
   const base = baseUrl();
   const url = seo.canonical && base ? `${base}${seo.canonical}` : '';
@@ -434,7 +471,11 @@ function seoTags(title: string, seo: Seo): string {
     `<meta property="og:type" content="${seo.ogType ?? 'website'}">`,
     seo.description ? `<meta property="og:description" content="${esc(seo.description)}">` : '',
     url ? `<meta property="og:url" content="${esc(url)}">` : '',
+    base ? `<meta property="og:image" content="${esc(`${base}/logo.png`)}">` : '',
+    base ? `<meta property="og:image:width" content="1000">` : '',
+    base ? `<meta property="og:image:height" content="1000">` : '',
     '<meta name="twitter:card" content="summary">',
+    base ? `<meta name="twitter:image" content="${esc(`${base}/logo.png`)}">` : '',
     // "<" is escaped so a headline can never close the script element.
     seo.jsonLd ? `<script type="application/ld+json">${JSON.stringify(seo.jsonLd).replace(/</g, '\\u003c')}</script>` : '',
   ];
@@ -713,6 +754,21 @@ export function page(title: string, inner: string, wide = false, below = ''): st
     `${title} · ${config.newsletterName}`,
     `<main class="wrap" style="max-width:${wide ? '760px' : '560px'}"><div class="sheet">${inner}</div>${below}</main>`,
     { seo: { noindex: true } },
+  );
+}
+
+/** An indexed article: About, the board list, and how to speak at a meeting. */
+export function publicArticle(doc: {
+  title: string;
+  description: string;
+  canonical: string;
+  html: string;
+  jsonLd?: Record<string, unknown>;
+}): string {
+  return shell(
+    `${doc.title} · ${config.newsletterName}`,
+    `<main class="wrap" style="max-width:720px"><article class="article">${doc.html}</article></main>`,
+    { seo: { description: doc.description, canonical: doc.canonical, jsonLd: doc.jsonLd, ogType: 'website' } },
   );
 }
 
@@ -1085,11 +1141,33 @@ export function weekSentence(headline: string): string {
   return /[.!?]$/.test(s) ? s : `${s}.`;
 }
 
+function boardAnchor(body: string): string {
+  if (body === 'Assembly') return 'assembly';
+  if (body === 'School Board') return 'school-board';
+  if (body === 'Planning Commission') return 'planning';
+  if (body === 'City Council') return 'city-council';
+  return '';
+}
+
 /** Last names of the people who vote on this body. A meeting has several votes, so the card names the board instead of one tally. */
-function membersLine(body: string): string {
+function membersLine(body: string, linked = false): string {
   const names = boardVoters(body);
   if (!names.length) return '';
-  return `<p class="who"><span>Members</span> ${esc(names.join(', '))}</p>`;
+  const label = esc(names.join(', '));
+  const anchor = boardAnchor(body);
+  const inner = linked && anchor ? `<a href="/boards#${anchor}">${label}</a>` : label;
+  return `<p class="who"><span>Members</span> ${inner}</p>`;
+}
+
+export interface MeetingTopicLink {
+  slug: string;
+  name: string;
+}
+
+function filedUnder(topics: MeetingTopicLink[]): string {
+  if (!topics.length) return '';
+  const links = topics.map((t) => `<a href="/topics/${esc(t.slug)}">${esc(t.name)}</a>`).join(', ');
+  return `<p class="filed">Filed under ${links}.</p>`;
 }
 
 export interface ComingItem {
@@ -1388,7 +1466,8 @@ const METHOD = `<ol class="method">
 <li><b>Checked</b>Names and item numbers against the published roster and agenda, with context from local news.</li>
 <li><b>Sent</b>It goes on the site, and out by email and phone, as soon as it's written.</li>
 </ol>
-<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself. The Ask tab uses those same recaps. Subscribers get 3 questions a month. ${ASK_PRICE_LABEL} raises that to 20.</p>`;
+<p class="aside-note">Recaps are written with AI and can contain mistakes. Every item links to the recording so you can hear it yourself. The Ask tab uses those same recaps. Subscribers get 3 questions a month. ${ASK_PRICE_LABEL} raises that to 20.</p>
+<p class="aside-note"><a href="/about">About this project</a> · <a href="/boards">Boards and meeting times</a> · <a href="/testify">How to speak at a meeting</a></p>`;
 
 export const signupPage = (recent: NoteHit[], work: WorkHit[], archiveCount: number, sinceLabel: string, topics: TopicOption[] = [], growth?: Growth, week: WeekBrief | null = null, coming: ComingGroup[] = []) => {
   // Lead with the newest written recap; fall back to a docket headline so the page is never empty.
@@ -1483,9 +1562,20 @@ ${comingSection(coming)}
         jsonLd: {
           '@context': 'https://schema.org',
           '@type': 'WebSite',
-          name: 'Independent recaps of Ketchikan public meetings',
+          name: config.newsletterName,
+          alternateName: 'Independent recaps of Ketchikan public meetings',
           description,
-          ...(baseUrl() ? { url: `${baseUrl()}/` } : {}),
+          publisher: sitePublisher(),
+          ...(baseUrl()
+            ? {
+                url: `${baseUrl()}/`,
+                potentialAction: {
+                  '@type': 'SearchAction',
+                  target: { '@type': 'EntryPoint', urlTemplate: `${baseUrl()}/notes?q={search_term_string}` },
+                  'query-input': 'required name=search_term_string',
+                },
+              }
+            : {}),
           about: { '@type': 'AdministrativeArea', name: 'Ketchikan Gateway Borough, Alaska' },
         },
       },
@@ -1546,20 +1636,21 @@ export function meetingPage(
   gap = '',
   editedAt: Date | null = null,
   talk?: NoteTalk,
+  topics: MeetingTopicLink[] = [],
 ): string {
   const note = publicStatusNote(meeting.status);
   const label = gap ? '' : publicPill(meeting.status);
   const banner = label || note ? `<div class="status-line">${label}${note ? `<p class="muted">${esc(note)}</p>` : ''}</div>` : '';
   const transcript = transcriptHtml(segments);
   // A reviewed recap has its own canonical page; drafts stay out of search.
-  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, draft: !approved, editedAt, talk });
+  if (digest) return noteDetailPage(meeting, digest, { banner, after: transcript, draft: !approved, editedAt, talk, topics });
   const date = formatDate(meeting.meetingDate);
   return shell(
     `${placeBody(meeting.body)} meeting${date ? `, ${date}` : ''} · ${config.newsletterName}`,
     `<main class="wrap" style="max-width:720px"><article class="article">
-${banner}<div class="kicker">${esc(meeting.body)}</div>
+${banner}<div class="kicker"><a href="/notes?body=${encodeURIComponent(meeting.body)}">${esc(meeting.body)}</a></div>
 <h1>${esc(placeBody(meeting.body))} meeting</h1>
-${membersLine(meeting.body)}
+${membersLine(meeting.body, true)}
 ${partsList(meeting.title, meeting.body)}
 <div class="byline"><span>${esc(date || 'Date unknown')}</span><a href="${esc(meeting.sourceUrl)}">Watch the recording</a></div>
 ${gap ? `<p>${esc(gap)}</p>` : ''}
@@ -1621,7 +1712,17 @@ function commentSection(meetingId: string, talk: NoteTalk): string {
 export function noteDetailPage(
   meeting: MeetingInfo,
   d: MeetingDigest,
-  opts: { banner?: string; after?: string; draft?: boolean; growth?: Growth; editedAt?: Date | null; thanks?: boolean; thanksAt?: number; talk?: NoteTalk } = {},
+  opts: {
+    banner?: string;
+    after?: string;
+    draft?: boolean;
+    growth?: Growth;
+    editedAt?: Date | null;
+    thanks?: boolean;
+    thanksAt?: number;
+    talk?: NoteTalk;
+    topics?: MeetingTopicLink[];
+  } = {},
 ): string {
   const ts = (t: number) =>
     `<a class="ts" href="${esc(timestampUrl(meeting.sourceUrl, meeting.platform, t))}">▶ ${hms(t)}</a>`;
@@ -1693,14 +1794,15 @@ ${flagged ? `<p class="thanks">Thanks. We'll check that line.</p>` : ''}
   return shell(
     title,
     `<main class="wrap" style="max-width:720px"><article class="article">
-${opts.banner ?? ''}<div class="kicker">${esc(placeBody(meeting.body))}</div>
+${opts.banner ?? ''}<div class="kicker"><a href="/notes?body=${encodeURIComponent(meeting.body)}">${esc(placeBody(meeting.body))}</a></div>
 <h1>${esc(d.headline)}</h1>
-${membersLine(meeting.body)}
+${membersLine(meeting.body, true)}
 ${partsList(meeting.title, meeting.body)}
 <div class="byline"><span>${esc(date ? `Meeting of ${date}` : 'Meeting date unknown')}</span>${updated}<a href="${esc(meeting.sourceUrl)}">Watch the recording</a><a href="/notes">More recaps</a>${opts.draft ? '' : `<a href="/ask?m=${encodeURIComponent(meeting.id)}">Ask about this</a>`}</div>
 ${thanksTop}
 <div class="body">${sections}</div>
-<div class="notice"><strong>How this was made</strong>Written with AI from ${isCityBody(meeting.body) ? "the City of Ketchikan's recording" : "the Borough's recording"} and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}</div>
+<div class="notice"><strong>How this was made</strong>Written with AI from ${isCityBody(meeting.body) ? "the City of Ketchikan's recording" : "the Borough's recording"} and an automated transcript${opts.draft ? '' : ', then reviewed by a person'}. Names, numbers and votes can be misheard; use the ▶ links to check the video.${checked.length ? `<br><br>Names checked against the ${checked.join(', ')}.` : ''}${caveats.length ? `<br><br>${caveats.map(esc).join('<br>')}` : ''}<br><br><a href="/about">Who publishes this</a></div>
+${filedUnder(opts.topics ?? [])}
 ${opts.talk ? commentSection(meeting.id, opts.talk) : ''}
 ${opts.after ?? ''}
 ${!opts.draft && base ? `<p class="share-head">Share this recap</p>${shareButtons(base + canonical, d.headline, `${d.headline}: what happened at the ${placeBody(meeting.body)} meeting.`)}` : ''}
@@ -1718,9 +1820,10 @@ ${!opts.draft && opts.growth ? signupCallout(opts.growth) : ''}
           headline: d.headline.slice(0, 110),
           description,
           ...(meeting.meetingDate ? { datePublished: meeting.meetingDate.toISOString().slice(0, 10) } : {}),
+          ...(opts.editedAt ? { dateModified: isoDay(opts.editedAt) } : {}),
           ...(base ? { url: `${base}${canonical}`, mainEntityOfPage: `${base}${canonical}` } : {}),
-          author: { '@type': 'Organization', name: config.newsletterName },
-          publisher: { '@type': 'Organization', name: config.newsletterName },
+          author: sitePublisher(),
+          publisher: sitePublisher(),
           about: {
             '@type': 'Event',
             name: `${placeBody(meeting.body)} meeting`,
@@ -1994,7 +2097,7 @@ ${a.background.length ? `<h2>Background from local news</h2>${list(a.background.
 <div class="kicker">Topic · ${esc(topic.name)}</div>
 <h1>${esc(headline)}</h1>
 ${a?.dek ? `<p class="dek">${esc(a.dek)}</p>` : `<p class="dek">${esc(topic.description)}</p>`}
-<div class="byline"><span>${rows.length} meeting${rows.length === 1 ? '' : 's'}${dive ? ` · Updated ${esc(shortDate(dive.date, false))}` : ''}</span><a href="#follow">Follow this topic</a><a href="/topics">All topics</a></div>
+<div class="byline"><span>${rows.length} meeting${rows.length === 1 ? '' : 's'}${dive ? ` · Updated ${esc(shortDate(dive.date, false))}` : ''}</span>${rows.length ? `<a href="${esc(rows[rows.length - 1].href)}">Latest recap</a>` : ''}<a href="#follow">Follow this topic</a><a href="/topics">All topics</a></div>
 ${story}
 <section><h2 class="rubric" style="margin-top:40px">How we got here</h2>${timeline}</section>
 <aside class="signup" id="follow" style="margin-top:40px"><h2>Follow ${esc(topic.name)}</h2><p>We'll email you an explainer when something big happens.</p>
@@ -2013,9 +2116,9 @@ ${story}
               '@type': 'NewsArticle',
               headline: headline.slice(0, 110),
               description: describe(description),
-              dateModified: dive.date.toISOString().slice(0, 10),
-              author: { '@type': 'Organization', name: config.newsletterName },
-              publisher: { '@type': 'Organization', name: config.newsletterName },
+              dateModified: isoDay(dive.date),
+              author: sitePublisher(),
+              publisher: sitePublisher(),
               about: { '@type': 'Thing', name: `${topic.name}, Ketchikan Gateway Borough` },
             }
           : undefined,
