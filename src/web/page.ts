@@ -83,22 +83,12 @@ fieldset{border:0;padding:0;margin:20px 0 0}legend{font:500 13.5px/1.4 var(--san
 p.who{margin:0 0 8px;font:400 13.5px/1.45 var(--sans);color:var(--muted)}
 p.who span{margin-right:6px;font:600 11px/1 var(--sans);letter-spacing:.04em;text-transform:uppercase;color:var(--text-2)}
 .coming{border-top:1px solid var(--line);margin-top:28px;padding-top:36px}
-.coming .group{padding:20px 0 4px}
-.coming .group + .group{border-top:1px solid var(--line);margin-top:8px}
-.coming h3{font-size:18.5px;line-height:1.3;letter-spacing:-.02em;margin:0}
-.coming h3 a{font-weight:600;text-decoration:none}
-.coming h3 a:hover{color:var(--teal)}
-.coming .who{margin:6px 0 0;font:400 13.5px/1.4 var(--sans);color:var(--muted)}
-.coming .dek{margin:8px 0 0;max-width:40em;font:400 15.5px/1.55 var(--sans);color:var(--text-2)}
-.coming ul{list-style:none;margin:12px 0 0;padding:0}
-.coming li{padding:10px 0;border-top:1px solid var(--line);font:500 15.5px/1.45 var(--sans);color:var(--text)}
-.coming li:last-child{padding-bottom:2px}
-.coming .meta{display:block;margin-top:3px;font:400 13.5px/1.4 var(--sans);color:var(--muted)}
-.coming .dates{margin:0 0 4px}
-.coming .dates li{padding:0}
-.coming .dates a{display:flex;flex-direction:column;gap:2px;padding:12px 0;text-decoration:none}
-.coming .dates .when{font:600 13px/1.35 var(--sans);letter-spacing:0;text-transform:none;color:var(--teal)}
-.coming .dates .what{font:500 15.5px/1.45 var(--sans);color:var(--text)}
+.coming ul{list-style:none;margin:18px 0 0;padding:0}
+.coming li{border-top:1px solid var(--line)}
+.coming li a{display:block;padding:16px 0;text-decoration:none}
+.coming .when{display:block;margin:0 0 4px;font:600 13px/1.4 var(--sans);color:var(--teal)}
+.coming .what{display:block;font:600 18px/1.35 var(--sans);letter-spacing:-.02em;color:var(--text)}
+.coming li a:hover .what{color:var(--teal)}
 .docket-empty[hidden]{display:none}
 #docket-filter{margin:0 0 12px}
 .hint{font:400 13px/1.5 var(--sans);color:var(--muted);margin:10px 0 0}
@@ -1082,33 +1072,44 @@ export function comingContext(summary: string): string {
   return out;
 }
 
-/** What the latest meetings said happens next. Each group is one meeting, so the subject is on the page. */
+/** Minutes from midnight for "6pm" or "6:30pm". Rows with no clock sort last that day. */
+function clockSortKey(clock: string | undefined): number {
+  const m = String(clock ?? '').match(/^(\d{1,2})(?::(\d{2}))?(am|pm)$/);
+  if (!m) return 24 * 60 + 1;
+  let hour = Number(m[1]);
+  const minute = Number(m[2] ?? 0);
+  if (m[3] === 'pm' && hour < 12) hour += 12;
+  if (m[3] === 'am' && hour === 12) hour = 0;
+  return hour * 60 + minute;
+}
+
+/** One line above every next step: the day, the board, and the time, in that order. */
+function comingLabel(item: ComingItem, who: string): string {
+  if (item.day) return [comingDayLabel(item.day), who, item.clock].filter(Boolean).join(' · ');
+  return [who, item.when].filter(Boolean).join(' · ');
+}
+
+/**
+ * What the latest meetings said happens next.
+ * Every row is the same: a teal line (day, board, time) and the next step.
+ * Dated rows come first. A step with no calendar day stays, in the same row.
+ */
 export function comingSection(groups: ComingGroup[]): string {
   if (!groups.length) return '';
-  const dated = groups.flatMap((g) =>
-    g.items.flatMap((c) => (c.day ? [{ day: c.day, clock: c.clock ?? '', who: g.who, item: c.item, href: g.href }] : [])),
-  );
-  dated.sort((a, b) => a.day.localeCompare(b.day) || a.who.localeCompare(b.who) || a.item.localeCompare(b.item));
-  const agenda = dated.length
-    ? `<ul class="dates">${dated
-        .map((c) => {
-          const when = [comingDayLabel(c.day), c.who, c.clock].filter(Boolean).join(' · ');
-          return `<li><a href="${esc(c.href)}"><span class="when">${esc(when)}</span><span class="what">${esc(c.item)}</span></a></li>`;
-        })
-        .join('')}</ul>`
-    : '';
-  const blocks = groups
-    .map((g) => {
-      const who = [g.who, g.date].filter(Boolean).join(' · ');
-      const lines = g.items
-        .map((c) => `<li>${esc(c.item)}${c.when ? `<span class="meta">${esc(c.when)}</span>` : ''}</li>`)
-        .join('');
-      return `<div class="group"><h3><a href="${esc(g.href)}">${esc(g.headline)}</a></h3>${who ? `<p class="who">${esc(who)}</p>` : ''}${g.context ? `<p class="dek">${esc(g.context)}</p>` : ''}<ul>${lines}</ul></div>`;
-    })
+  const rows = groups.flatMap((g) => g.items.map((item) => ({ item, who: g.who, href: g.href })));
+  if (!rows.length) return '';
+  rows.sort((a, b) => {
+    if (a.item.day && b.item.day && a.item.day !== b.item.day) return a.item.day.localeCompare(b.item.day);
+    if (a.item.day && !b.item.day) return -1;
+    if (!a.item.day && b.item.day) return 1;
+    return clockSortKey(a.item.clock) - clockSortKey(b.item.clock) || a.who.localeCompare(b.who) || a.item.item.localeCompare(b.item.item);
+  });
+  const list = rows
+    .map(({ item, who, href }) => `<li><a href="${esc(href)}"><span class="when">${esc(comingLabel(item, who))}</span><span class="what">${esc(item.item)}</span></a></li>`)
     .join('');
   return `<section class="coming" id="coming"><h2 class="rubric">Coming up</h2>
 <p class="muted">What the latest meetings said happens next.</p>
-${agenda}${blocks}</section>`;
+<ul>${list}</ul></section>`;
 }
 
 export interface NoteHit {
