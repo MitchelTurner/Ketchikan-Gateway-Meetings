@@ -124,7 +124,7 @@ model Subscriber {
   referredById String? // the reader whose invite link they signed up through
   referredBy   Subscriber?  @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
   referrals    Subscriber[] @relation("Referrals")
-  stripeCustomerId     String?   @unique
+  stripeCustomerId     String?
   stripeSubscriptionId String?
   /** free, or paid while the Stripe subscription is active and not revoked. */
   askAccess            String    @default("free")
@@ -139,6 +139,7 @@ model Subscriber {
 
   @@index([referredById])
   @@index([refCode])
+  @@index([stripeCustomerId])
 }
 
 /** One question a reader asked, and the answer written from published recaps. */

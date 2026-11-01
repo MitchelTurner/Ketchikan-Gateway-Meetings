@@ -119,7 +119,7 @@ export class BillingService {
   private async applySubscription(subscription: Stripe.Subscription): Promise<void> {
     const customerId = stripeId(subscription.customer);
     if (!customerId) return;
-    const reader = await this.prisma.subscriber.findUnique({ where: { stripeCustomerId: customerId } });
+    const reader = await this.prisma.subscriber.findFirst({ where: { stripeCustomerId: customerId } });
     if (!reader) return;
     const next = accessAfterSubscription(gateOf(reader), {
       id: subscription.id,
@@ -131,7 +131,7 @@ export class BillingService {
 
   private async revokeCustomer(customerId: string | null): Promise<void> {
     if (!customerId) return;
-    const reader = await this.prisma.subscriber.findUnique({ where: { stripeCustomerId: customerId } });
+    const reader = await this.prisma.subscriber.findFirst({ where: { stripeCustomerId: customerId } });
     if (!reader) return;
     await this.prisma.subscriber.update({ where: { id: reader.id }, data: accessAfterRevoke(gateOf(reader)) });
     this.log.warn(`Ask access revoked for ${reader.id}`);
