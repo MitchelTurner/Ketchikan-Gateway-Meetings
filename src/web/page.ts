@@ -317,18 +317,6 @@ a.hit:hover h2{color:var(--teal)}
 .app-card button.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-2)}
 .app-card fieldset{margin-top:16px}
 .app-card .hint{margin-top:12px}
-.ask{border:0;padding:0;background:transparent;max-width:calc(100vw - 28px)}
-.ask::backdrop{background:rgba(6,8,11,.62)}
-.ask .sheet{background:var(--card);color:var(--text);border:1px solid var(--line-2);border-radius:20px;padding:22px 20px 18px;width:min(420px,calc(100vw - 28px));box-shadow:0 24px 60px rgba(0,0,0,.35)}
-.ask h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}
-.ask p{font:400 15.5px/1.5 var(--sans);color:var(--text-2);margin:0}
-.ask fieldset{margin-top:16px}
-.ask form{margin-top:16px}
-.ask label{margin:0 0 8px}
-.ask .actions{display:flex;flex-direction:column;gap:8px;margin-top:16px}
-.ask button{margin:0}
-.ask button.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-2);margin-top:8px}
-.ask .hint{margin-top:12px}
 
 /* Footer: the note, then the links the bottom bar doesn't cover. */
 footer.site{position:relative;margin-top:56px;border-top:1px solid var(--line);padding:28px 0 8px;font:400 15px/1.6 var(--sans);color:var(--text-2)}
@@ -473,58 +461,6 @@ function notifyChoices(): string {
     .join('');
 }
 
-/** Email signup, shown once until this browser subscribes or clicks it away. */
-function signupDialog(): string {
-  return `<dialog class="ask" id="signup-ask" aria-labelledby="signup-ask-title"><div class="sheet">
-<h2 id="signup-ask-title">Get the recap</h2>
-<p>One email when a recap is written.</p>
-<form method="post" action="/subscribe"><input type="hidden" name="ref" value="">
-<label for="signup-email">Email address</label>
-<input id="signup-email" type="email" name="email" required autocomplete="email" placeholder="you@example.com">
-<button type="submit">Subscribe</button></form>
-<p class="hint">Confirm by email. One-click unsubscribe in every message.</p>
-<button type="button" class="ghost" id="signup-ask-no">Not now</button>
-</div></dialog>`;
-}
-
-/** Remembers on this browser that the reader signed up, or clears that after they unsubscribe. */
-export function signupRemember(on: boolean): string {
-  const op = on ? "localStorage.setItem('kgb-signup','on')" : "localStorage.removeItem('kgb-signup')";
-  return `<script>try{${op}}catch(e){}</script>`;
-}
-
-/** Opens the signup dialog unless this browser already subscribed or closed it. Clicking the backdrop closes it. */
-const SIGNUP_JS = `<script>(function(){
-var ask = document.getElementById('signup-ask');
-if (!ask) return;
-var KEY = 'kgb-signup';
-function state() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
-function remember(v) { try { if (v) localStorage.setItem(KEY, v); else localStorage.removeItem(KEY); } catch (e) {} }
-function signed() {
-  if (state() === 'on') return true;
-  return /(?:^|; )kgb_signed=1(?:;|$)/.test(document.cookie);
-}
-var ref = (document.cookie.match(/(?:^|; )kgb_ref=([^;]*)/) || [])[1] || '';
-var refInput = ask.querySelector('input[name=ref]');
-if (ref && refInput) { try { refInput.value = decodeURIComponent(ref); } catch (e) { refInput.value = ref; } }
-var leaving = false;
-var form = ask.querySelector('form');
-if (form) form.addEventListener('submit', function() { leaving = true; });
-ask.addEventListener('click', function(e) { if (e.target === ask) ask.close(); });
-var no = document.getElementById('signup-ask-no');
-if (no) no.addEventListener('click', function() { ask.close(); });
-ask.addEventListener('close', function() { if (!leaving && state() !== 'on') remember('later'); });
-if (signed()) { remember('on'); return; }
-if (state() === 'later') return;
-var path = location.pathname;
-if (path === '/subscribe' || path === '/ask' || path === '/login' || path === '/account' || path.indexOf('/ask/') === 0 || path.indexOf('/login/') === 0 || path.indexOf('/confirm/') === 0 || path.indexOf('/preferences/') === 0 || path.indexOf('/unsubscribe/') === 0) return;
-if (location.hash === '#subscribe') return;
-setTimeout(function() {
-  if (location.hash === '#subscribe' || state() === 'later' || state() === 'on') return;
-  try { ask.showModal(); } catch (e) {}
-}, 700);
-})()</script>`;
-
 /** Registers the app and saves which meetings this phone wants. It does not ask on its own. */
 const APP_JS = `<script>(function(){
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
@@ -651,10 +587,8 @@ ${seoTags(title, opts.seo ?? {})}
 ${main}
 ${footer()}
 ${desk ? '' : tabbar()}
-${desk ? '' : signupDialog()}
 ${SHARE_JS}
 ${desk ? '' : TAB_JS}
-${desk ? '' : SIGNUP_JS}
 ${desk ? '' : APP_JS}
 </body></html>`;
 }
