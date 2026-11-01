@@ -242,6 +242,8 @@ export interface AdminPost {
   hasTranscript: boolean;
   sourceUrl: string;
   corrections: { item: string; note: string; createdAt: Date }[];
+  /** Topics the editor can email this recap to, on top of the automatic meeting mail. */
+  topicChoices: { id: string; name: string; followers: number; onThisMeeting: boolean }[];
   flash?: string;
 }
 
@@ -272,6 +274,23 @@ export function adminPostPage(p: AdminPost): string {
         : postButton(`${base}/publish`, 'Publish on the site');
     publish = `<div class="panel"><h3>${emailed ? 'Email' : 'Publish'}</h3><p>${esc(emailNote)}</p>${actions ? `<div class="actions">${actions}</div>` : ''}</div>`;
   }
+  const topicMail =
+    p.state === 'hidden' || !p.topicChoices.length
+      ? ''
+      : `<div class="panel"><h3>Topic followers</h3><p>${
+          p.emailReady
+            ? 'Meeting recaps still email themselves. This also sends this recap to followers of the topics you pick. Anyone who already received it is skipped.'
+            : "Email isn't connected yet, so topic followers can't be mailed until Resend is configured."
+        }</p>${
+          p.emailReady
+            ? `<form method="post" action="${esc(base)}/topics" onsubmit="return confirm('Email this recap to followers of the selected topics? People who already received it are skipped.')"><div class="chips">${p.topicChoices
+                .map(
+                  (t) =>
+                    `<label><input type="checkbox" name="topics" value="${esc(t.id)}">${esc(t.name)} · ${t.followers}${t.onThisMeeting ? ' · on this recap' : ''}</label>`,
+                )
+                .join('')}</div><button type="submit" class="btn" style="margin-top:14px">Email selected topics</button></form>`
+            : ''
+        }</div>`;
   const visibility =
     p.state === 'hidden'
       ? `<div class="panel"><h3>Hidden</h3><p>Taken off the site ${esc(stamp(p.hiddenAt))}. Nobody can open it, and it's out of search and the sitemap.</p>${postButton(`${base}/unhide`, 'Put it back', { cls: 'ghost' })}</div>`
@@ -307,7 +326,7 @@ ${p.error ? `<div class="flash bad">${esc(p.error)}</div>` : ''}
 <div class="actions" style="margin-top:16px"><button type="submit" class="btn">Save changes</button><a class="btn ghost" href="${esc(p.publicHref)}">View on site</a><a class="btn ghost" href="/admin/meetings/${esc(p.id)}/preview">Email preview</a></div>
 </form>
 <aside>
-${publish}${visibility}
+${publish}${topicMail}${visibility}
 <div class="panel"><h3>Reader corrections</h3>${corrections}</div>
 <div class="panel"><h3>Names corrected</h3>${names}</div>
 <div class="panel"><h3>Checked against</h3>${sources}</div>

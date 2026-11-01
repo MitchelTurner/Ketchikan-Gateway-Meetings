@@ -432,6 +432,49 @@ export class PipelineService {
     void this.push.notifyRecap(meetingId);
   }
 
+  /**
+   * Emails this recap to confirmed followers of the given topics.
+   * The automatic meeting email is left alone. Anyone who already has a
+   * row for this recap is skipped, so a follower is not mailed twice.
+   */
+  async sendToTopicFollowers(meetingId: string, topicIds: string[]): Promise<number> {
+    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
+    if (!meeting?.analysis || meeting.analysis.hiddenAt) throw new NotFoundException();
+    if (emptyRecording(normalizeDigest(meeting.analysis.data))) throw new NotFoundException('No recap to send');
+    const ids = [...new Set(topicIds.map((id) => String(id).trim()).filter(Boolean))].slice(0, 40);
+    if (!ids.length || !config.emailReady) return 0;
+    const topics = await this.prisma.topic.findMany({
+      where: { id: { in: ids }, status: { not: 'ARCHIVED' } },
+      select: { slug: true },
+    });
+    if (!topics.length) return 0;
+    const subs = await this.prisma.subscriber.findMany({
+      where: { status: 'CONFIRMED', topics: { hasSome: topics.map((t) => t.slug) } },
+      select: { id: true },
+    });
+    if (!subs.length) return 0;
+    const existing = await this.prisma.emailSend.findMany({
+      where: { meetingId, subscriberId: { in: subs.map((s) => s.id) } },
+      select: { subscriberId: true },
+    });
+    const skip = new Set(existing.map((e) => e.subscriberId));
+    const fresh = subs.filter((s) => !skip.has(s.id));
+    if (!fresh.length) return 0;
+    await this.prisma.emailSend.createMany({
+      data: fresh.map((s) => ({ meetingId, subscriberId: s.id })),
+      skipDuplicates: true,
+    });
+    await this.emailQ.addBulk(
+      fresh.map((s) => ({
+        name: 'send',
+        data: { meetingId, subscriberId: s.id },
+        opts: { jobId: `send-${meetingId}-${s.id}`, attempts: 4, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 1000 },
+      })),
+    );
+    this.log.log(`Queued ${fresh.length} topic-follower emails for ${meeting.title}`);
+    return fresh.length;
+  }
+
   async sendOne(meetingId: string, subscriberId: string) {
     const rec = await this.prisma.emailSend.findUnique({ where: { meetingId_subscriberId: { meetingId, subscriberId } } });
     if (rec?.status === 'sent') return;
