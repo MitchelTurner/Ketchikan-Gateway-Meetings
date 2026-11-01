@@ -433,46 +433,19 @@ export class PipelineService {
   }
 
   /**
-   * Emails this recap to confirmed followers of the given topics.
-   * The automatic meeting email is left alone. Anyone who already has a
-   * row for this recap is skipped, so a follower is not mailed twice.
+   * One copy of this recap, to one address. Does not email subscribers,
+   * write an EmailSend row, or change the post.
    */
-  async sendToTopicFollowers(meetingId: string, topicIds: string[]): Promise<number> {
-    const meeting = await this.prisma.meeting.findUnique({ where: { id: meetingId }, include: { analysis: true } });
-    if (!meeting?.analysis || meeting.analysis.hiddenAt) throw new NotFoundException();
-    if (emptyRecording(normalizeDigest(meeting.analysis.data))) throw new NotFoundException('No recap to send');
-    const ids = [...new Set(topicIds.map((id) => String(id).trim()).filter(Boolean))].slice(0, 40);
-    if (!ids.length || !config.emailReady) return 0;
-    const topics = await this.prisma.topic.findMany({
-      where: { id: { in: ids }, status: { not: 'ARCHIVED' } },
-      select: { slug: true },
+  async sendTest(meetingId: string, to: string): Promise<void> {
+    const input = await this.renderInput(meetingId, null);
+    input.banner = `<div style="background:#fff7e0;border:1px solid #e8c766;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:14px;line-height:1.5"><strong>Test copy.</strong> Subscribers were not emailed.</div>`;
+    await this.email.send({
+      to,
+      subject: `[Test] ${renderSubject(input)}`,
+      html: renderHtml(input),
+      text: `Test copy. Subscribers were not emailed.\n\n${renderText(input)}`,
     });
-    if (!topics.length) return 0;
-    const subs = await this.prisma.subscriber.findMany({
-      where: { status: 'CONFIRMED', topics: { hasSome: topics.map((t) => t.slug) } },
-      select: { id: true },
-    });
-    if (!subs.length) return 0;
-    const existing = await this.prisma.emailSend.findMany({
-      where: { meetingId, subscriberId: { in: subs.map((s) => s.id) } },
-      select: { subscriberId: true },
-    });
-    const skip = new Set(existing.map((e) => e.subscriberId));
-    const fresh = subs.filter((s) => !skip.has(s.id));
-    if (!fresh.length) return 0;
-    await this.prisma.emailSend.createMany({
-      data: fresh.map((s) => ({ meetingId, subscriberId: s.id })),
-      skipDuplicates: true,
-    });
-    await this.emailQ.addBulk(
-      fresh.map((s) => ({
-        name: 'send',
-        data: { meetingId, subscriberId: s.id },
-        opts: { jobId: `send-${meetingId}-${s.id}`, attempts: 4, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: 1000 },
-      })),
-    );
-    this.log.log(`Queued ${fresh.length} topic-follower emails for ${meeting.title}`);
-    return fresh.length;
+    this.log.log(`Sent a test recap for ${meetingId}`);
   }
 
   async sendOne(meetingId: string, subscriberId: string) {

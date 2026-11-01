@@ -15,7 +15,6 @@ import { isBackfill, PipelineService } from '../pipeline/pipeline.service';
 import { PrismaService } from '../prisma.service';
 import { Q_CONTROL } from '../queues';
 import { normalizeDigest } from '../analysis/analysis.service';
-import { emptyRecording } from '../analysis/empty-recording';
 import { esc, formatDate, shortDate, verify } from '../util';
 import { adminLoginPage, AdminOverview, adminOverviewPage, adminPostPage, AdminPostRow, adminPostsPage, PostFilter } from './admin-page';
 import { adminMeetingsPage, adminTopicsPage, adminTranscriptPage, noteHref, page } from './page';
@@ -47,22 +46,6 @@ class AdminGuard implements CanActivate {
   }
 }
 
-function topicsFlash(done?: string, n?: string): string | undefined {
-  if (done === 'topics-none') return 'Pick at least one topic.';
-  if (done === 'topics-sent') {
-    const queued = Number(n);
-    const count = Number.isInteger(queued) && queued > 0 ? queued : 0;
-    return count
-      ? `Queued email for ${count} follower${count === 1 ? '' : 's'} who had not already received that recap. Automatic meeting mail is unchanged.`
-      : 'Nothing new to send. Those followers already have the recap, nobody follows the topics you picked, or those topics have no recap yet.';
-  }
-  return done ? FLASH[done] : undefined;
-}
-
-function topicIds(v: unknown): string[] {
-  return [...new Set((Array.isArray(v) ? v : v ? [v] : []).map((x) => String(x).trim()).filter(Boolean))].slice(0, 40);
-}
-
 const FLASH: Record<string, string> = {
   saved: 'Saved. The site shows the new version now.',
   published: 'Published on the site. No email was sent.',
@@ -72,6 +55,8 @@ const FLASH: Record<string, string> = {
   rewriting: 'Rewriting with Claude. The post comes back as a draft in a few minutes.',
   discover: 'Checking the archive for new meetings.',
   'already-published': 'That post was already published.',
+  'test-sent': 'Test sent. Subscribers were not emailed.',
+  'test-failed': 'The test email did not send. Check that Resend is connected.',
 };
 
 const isFilter = (v: unknown): v is PostFilter => v === 'drafts' || v === 'published' || v === 'hidden' || v === 'all';
@@ -308,7 +293,7 @@ export class AdminController {
   @Get('posts/:id')
   @UseGuards(AdminGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async post(@Param('id') id: string, @Query('done') done?: string, @Query('n') n?: string) {
+  async post(@Param('id') id: string, @Query('done') done?: string) {
     const m = await this.prisma.meeting.findUnique({
       where: { id },
       include: { analysis: true, transcript: { select: { id: true } }, corrections: { orderBy: { createdAt: 'desc' }, take: 30 } },
@@ -321,7 +306,6 @@ export class AdminController {
       this.prisma.subscriber.count({ where: { status: 'CONFIRMED', recaps: true, OR: [{ bodies: { isEmpty: true } }, { bodies: { has: m.body } }] } }),
     ]);
     const state = a.hiddenAt ? 'hidden' : a.approvedAt ? 'published' : 'draft';
-    const topicChoices = state === 'hidden' ? [] : await this.topicChoices(id);
     return adminPostPage({
       id,
       title: m.title,
@@ -347,20 +331,25 @@ export class AdminController {
       hasTranscript: Boolean(m.transcript),
       sourceUrl: m.sourceUrl,
       corrections: m.corrections.map((c) => ({ item: c.item, note: c.note, createdAt: c.createdAt })),
-      topicChoices,
-      flash: topicsFlash(done, n),
+      testTo: process.env.ADMIN_EMAIL?.trim() ?? '',
+      flash: done ? FLASH[done] : undefined,
     });
   }
 
-  /** Emails this recap to followers of the topics the editor picked. Automatic meeting mail is separate. */
-  @Post('posts/:id/topics')
+  /** One copy of this recap, to one address. Subscribers are not emailed and the post is left as it is. */
+  @Post('posts/:id/test')
   @UseGuards(AdminGuard)
-  async sendPostTopics(@Param('id') id: string, @Body() body: { topics?: string | string[] }, @Res() res: Response) {
-    const ids = topicIds(body.topics);
-    if (!ids.length) return res.redirect(303, `/admin/posts/${encodeURIComponent(id)}?done=topics-none`);
+  async sendTest(@Param('id') id: string, @Body() body: { email?: string }, @Res() res: Response) {
+    const email = String(body.email ?? '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new BadRequestException('That email does not look right');
     if (!config.emailReady) throw new BadRequestException("Email isn't connected yet");
-    const queued = await this.pipeline.sendToTopicFollowers(id, ids);
-    res.redirect(303, `/admin/posts/${encodeURIComponent(id)}?done=topics-sent&n=${queued}`);
+    try {
+      await this.pipeline.sendTest(id, email);
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      return res.redirect(303, `/admin/posts/${encodeURIComponent(id)}?done=test-failed`);
+    }
+    res.redirect(303, `/admin/posts/${encodeURIComponent(id)}?done=test-sent`);
   }
 
   @Post('posts/:id')
@@ -421,96 +410,19 @@ export class AdminController {
 
   @Get('topics')
   @UseGuards(AdminGuard)
-  async topicList(@Req() req: Request, @Query('done') done?: string, @Query('n') n?: string) {
+  async topicList(@Req() req: Request) {
     const rows = await this.topics.adminList();
     if (!String(req.headers.accept ?? '').includes('text/html')) return rows;
-    const counts = await this.followerCounts(rows.map((t) => t.slug));
     return adminTopicsPage(
       rows.map((t) => ({
         ...t,
-        followers: counts.get(t.slug) ?? 0,
         dives: t.dives.map((d) => ({
           ...d,
           previewHref: `/admin/dives/${d.id}/preview`,
           approveHref: this.dives.approvePath(d.id),
         })),
       })),
-      topicsFlash(done, n) ?? '',
     );
-  }
-
-  /**
-   * Emails the latest recap on each selected topic to its followers.
-   * Topics that share a recap produce one email per follower.
-   */
-  @Post('topics/send')
-  @UseGuards(AdminGuard)
-  async sendTopics(@Body() body: { topics?: string | string[] }, @Res() res: Response) {
-    const ids = topicIds(body.topics);
-    if (!ids.length) return res.redirect(303, '/admin/topics?done=topics-none');
-    if (!config.emailReady) throw new BadRequestException("Email isn't connected yet");
-    const latest = await this.latestRecapByTopic(ids);
-    const byMeeting = new Map<string, string[]>();
-    for (const topicId of ids) {
-      const meetingId = latest.get(topicId);
-      if (!meetingId) continue;
-      const list = byMeeting.get(meetingId) ?? [];
-      list.push(topicId);
-      byMeeting.set(meetingId, list);
-    }
-    let queued = 0;
-    for (const [meetingId, topicIdsForMeeting] of byMeeting) queued += await this.pipeline.sendToTopicFollowers(meetingId, topicIdsForMeeting);
-    res.redirect(303, `/admin/topics?done=topics-sent&n=${queued}`);
-  }
-
-  /** Confirmed followers of each slug. */
-  private async followerCounts(slugs: string[]): Promise<Map<string, number>> {
-    const counts = new Map<string, number>();
-    if (!slugs.length) return counts;
-    const subs = await this.prisma.subscriber.findMany({
-      where: { status: 'CONFIRMED', topics: { hasSome: slugs } },
-      select: { topics: true },
-    });
-    const wanted = new Set(slugs);
-    for (const sub of subs) for (const slug of sub.topics) if (wanted.has(slug)) counts.set(slug, (counts.get(slug) ?? 0) + 1);
-    return counts;
-  }
-
-  /** Topics the editor can mail this recap to. Ones raised in the meeting come first. */
-  private async topicChoices(meetingId: string) {
-    const [topics, tagged] = await Promise.all([
-      this.prisma.topic.findMany({
-        where: { status: { not: 'ARCHIVED' } },
-        select: { id: true, slug: true, name: true },
-        orderBy: { name: 'asc' },
-      }),
-      this.prisma.meetingTopic.findMany({ where: { meetingId }, select: { topicId: true } }),
-    ]);
-    const counts = await this.followerCounts(topics.map((t) => t.slug));
-    const onMeeting = new Set(tagged.map((t) => t.topicId));
-    return topics
-      .map((t) => ({ id: t.id, name: t.name, followers: counts.get(t.slug) ?? 0, onThisMeeting: onMeeting.has(t.id) }))
-      .sort((a, b) => Number(b.onThisMeeting) - Number(a.onThisMeeting) || a.name.localeCompare(b.name));
-  }
-
-  /** Newest written recap for each topic. A microphone check is not a recap. */
-  private async latestRecapByTopic(topicIds: string[]): Promise<Map<string, string>> {
-    const links = await this.prisma.meetingTopic.findMany({
-      where: { topicId: { in: topicIds }, meeting: { analysis: { is: { hiddenAt: null } } } },
-      select: {
-        topicId: true,
-        meetingId: true,
-        meeting: { select: { meetingDate: true, createdAt: true, analysis: { select: { data: true } } } },
-      },
-    });
-    const best = new Map<string, { meetingId: string; at: number }>();
-    for (const link of links) {
-      if (emptyRecording(normalizeDigest(link.meeting.analysis?.data))) continue;
-      const at = link.meeting.meetingDate?.getTime() ?? link.meeting.createdAt.getTime();
-      const prev = best.get(link.topicId);
-      if (!prev || at > prev.at) best.set(link.topicId, { meetingId: link.meetingId, at });
-    }
-    return new Map([...best].map(([topicId, row]) => [topicId, row.meetingId]));
   }
 
   @Post('topics/:id/approve')

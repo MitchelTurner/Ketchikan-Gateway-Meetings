@@ -1851,12 +1851,11 @@ export interface AdminTopicRow {
   status: string;
   meetings: number;
   milestones: number;
-  followers: number;
   dives: { id: string; status: string; createdAt: Date; headline: string; previewHref: string; approveHref: string }[];
 }
 
 /** Suggestions to approve or archive, approved topics, and deep-dive drafts. */
-export function adminTopicsPage(rows: AdminTopicRow[], flash = ''): string {
+export function adminTopicsPage(rows: AdminTopicRow[]): string {
   const btn = (action: string, label: string, cls = '') =>
     `<form method="post" action="${esc(action)}" style="display:inline"><button type="submit" class="btn ${cls}">${esc(label)}</button></form>`;
   const card = (t: AdminTopicRow) => `<div class="hit"><div class="kicker">${esc(t.status)} · ${t.meetings} meeting${t.meetings === 1 ? '' : 's'} · ${t.milestones} key moment${t.milestones === 1 ? '' : 's'}</div>
@@ -1869,27 +1868,11 @@ export function adminTopicsPage(rows: AdminTopicRow[], flash = ''): string {
 ${t.dives.length ? `<ul class="parts" style="margin-top:10px">${t.dives.map((d) => `<li>${esc(d.status)} · ${esc(d.headline)} · <a href="${esc(d.previewHref)}">Preview</a>${d.status === 'DRAFT' ? ` · <a href="${esc(d.approveHref)}">Approve and send</a>` : ''}</li>`).join('')}</ul>` : ''}</div>`;
   const suggested = rows.filter((r) => r.status === 'SUGGESTED');
   const approved = rows.filter((r) => r.status === 'APPROVED');
-  const sendTopics = rows
-    .map(
-      (t) =>
-        `<label><input type="checkbox" name="topics" value="${esc(t.id)}">${esc(t.name)} · ${t.followers} follower${t.followers === 1 ? '' : 's'}</label>`,
-    )
-    .join('');
   return adminPage(
     'Topics',
     'topics',
-    `${flash ? `<div class="flash">${esc(flash)}</div>` : ''}<h1>Topics</h1>
-<p class="lede">Claude suggests issues as it reads each recap; the ones raised at the most meetings are at the top. Suggested and approved topics are already on the public topics page. Approving one adds it to the signup form, and a deep dive emails itself after each key moment. You can also email a recap to topic followers by hand.</p>
-${
-  rows.length
-    ? `<form method="post" action="/admin/topics/send" class="panel" style="margin-bottom:28px" onsubmit="return confirm('Email the latest recap on each selected topic to its followers? People who already received that recap are skipped.')">
-<h3 style="margin:0 0 8px">Email followers</h3>
-<p>Pick topics to email now, in addition to the recaps and deep dives that send themselves. Each selected topic sends its latest recap to people who follow it.</p>
-<div class="chips">${sendTopics}</div>
-<button type="submit" class="btn" style="margin-top:14px">Email the selected topics</button>
-</form>`
-    : ''
-}
+    `<h1>Topics</h1>
+<p class="lede">Claude suggests issues as it reads each recap; the ones raised at the most meetings are at the top. Suggested and approved topics are already on the public topics page. Approving one adds it to the signup form, and a deep dive emails itself after each key moment.</p>
 <p>${btn('/admin/topics/scan', 'Tag older recaps now')}</p>
 <h2 class="section">Suggested (${suggested.length})</h2>${suggested.length ? `<div class="hits">${suggested.map(card).join('')}</div>` : '<p class="muted">No suggestions waiting.</p>'}
 <h2 class="section">Approved (${approved.length})</h2>${approved.length ? `<div class="hits">${approved.map(card).join('')}</div>` : '<p class="muted">None yet.</p>'}
